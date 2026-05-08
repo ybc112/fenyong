@@ -1,0 +1,14 @@
+{
+  "name": "nbt-staking-contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:contracts": "forge build",
+    "deploy:testnet": "node scripts/deploy-testnet.mjs",
+    "build:frontend": "npm --prefix \"frontend 3\" run build"
+  },
+  "dependencies": {
+    "ethers": "^6.16.0"
+  }
+}

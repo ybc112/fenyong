@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+frontend 3/node_modules/
+
+# Build output
+dist/
+build/
+frontend 3/dist/
+
+# Local environment files
+.env
+.env.*
+!.env.example
+frontend 3/.env
+frontend 3/.env.*
+!frontend 3/.env.example
+
+# Foundry output
+cache/
+out/
+broadcast/
+
+# Local assistant/tooling metadata
+.agents/
+.claude/
+.codex/
+
+# OS/editor files
+__MACOSX/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
