@@ -11,6 +11,15 @@ const createDefaultProvider = () => {
   return new ethers.JsonRpcProvider(randomRpc);
 };
 
+const parseChainId = (value) => {
+  if (typeof value === 'number') return value;
+  if (typeof value === 'bigint') return Number(value);
+  if (typeof value !== 'string') return null;
+  return value.toLowerCase().startsWith('0x')
+    ? parseInt(value, 16)
+    : parseInt(value, 10);
+};
+
 export function useWallet() {
   const [account, setAccount] = useState(null);
   const [chainId, setChainId] = useState(null);
@@ -25,6 +34,36 @@ export function useWallet() {
   // 优先使用钱包 Provider，否则使用默认 Provider
   const provider = walletProvider || defaultProvider;
 
+  // 断开连接
+  const disconnect = useCallback(() => {
+    setAccount(null);
+    setChainId(null);
+    setWalletProvider(null);
+    setSigner(null);
+  }, []);
+
+  const refreshWalletState = useCallback(async () => {
+    if (typeof window.ethereum === 'undefined') return;
+
+    const [accounts, currentChainId] = await Promise.all([
+      window.ethereum.request({ method: 'eth_accounts' }),
+      window.ethereum.request({ method: 'eth_chainId' }),
+    ]);
+
+    setChainId(parseChainId(currentChainId));
+
+    if (accounts.length > 0) {
+      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      const walletSigner = await browserProvider.getSigner();
+
+      setAccount(accounts[0]);
+      setWalletProvider(browserProvider);
+      setSigner(walletSigner);
+    } else {
+      disconnect();
+    }
+  }, [disconnect]);
+
   const isCorrectNetwork = !account || chainId === EXPECTED_CHAIN_ID;
 
   // 检查钱包是否已连接
@@ -32,22 +71,11 @@ export function useWallet() {
     if (typeof window.ethereum === 'undefined') return;
 
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-      const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
-      setChainId(parseInt(currentChainId, 16));
-
-      if (accounts.length > 0) {
-        const browserProvider = new ethers.BrowserProvider(window.ethereum);
-        const walletSigner = await browserProvider.getSigner();
-
-        setAccount(accounts[0]);
-        setWalletProvider(browserProvider);
-        setSigner(walletSigner);
-      }
+      await refreshWalletState();
     } catch (err) {
       console.error('Check connection error:', err);
     }
-  }, []);
+  }, [refreshWalletState]);
 
   // 连接钱包
   const connect = useCallback(async () => {
@@ -69,7 +97,7 @@ export function useWallet() {
       const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
 
       setAccount(accounts[0]);
-      setChainId(parseInt(currentChainId, 16));
+      setChainId(parseChainId(currentChainId));
       setWalletProvider(browserProvider);
       setSigner(walletSigner);
     } catch (err) {
@@ -77,14 +105,6 @@ export function useWallet() {
     } finally {
       setIsConnecting(false);
     }
-  }, []);
-
-  // 断开连接
-  const disconnect = useCallback(() => {
-    setAccount(null);
-    setChainId(null);
-    setWalletProvider(null);
-    setSigner(null);
   }, []);
 
   // 切换网络
@@ -96,6 +116,7 @@ export function useWallet() {
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: CURRENT_NETWORK.chainId }],
       });
+      await refreshWalletState();
     } catch (switchError) {
       // 如果网络不存在，添加网络
       if (switchError.code === 4902) {
@@ -104,6 +125,7 @@ export function useWallet() {
             method: 'wallet_addEthereumChain',
             params: [CURRENT_NETWORK],
           });
+          await refreshWalletState();
         } catch (addError) {
           setError('添加网络失败');
         }
@@ -111,37 +133,37 @@ export function useWallet() {
         setError('切换网络失败');
       }
     }
-  }, []);
+  }, [refreshWalletState]);
 
   // 监听账户和网络变化
   useEffect(() => {
     if (typeof window.ethereum === 'undefined') return;
 
-    const handleAccountsChanged = async (accounts) => {
-      if (accounts.length === 0) {
-        disconnect();
-      } else {
-        setAccount(accounts[0]);
-        const browserProvider = new ethers.BrowserProvider(window.ethereum);
-        setWalletProvider(browserProvider);
-        setSigner(await browserProvider.getSigner());
-      }
+    const handleAccountsChanged = () => {
+      refreshWalletState().catch((err) => console.error('Refresh wallet after account change error:', err));
     };
 
     const handleChainChanged = (chainId) => {
-      setChainId(parseInt(chainId, 16));
+      setChainId(parseChainId(chainId));
+      refreshWalletState().catch((err) => console.error('Refresh wallet after chain change error:', err));
+    };
+
+    const handleFocus = () => {
+      refreshWalletState().catch((err) => console.error('Refresh wallet on focus error:', err));
     };
 
     window.ethereum.on('accountsChanged', handleAccountsChanged);
     window.ethereum.on('chainChanged', handleChainChanged);
+    window.addEventListener('focus', handleFocus);
 
     checkConnection();
 
     return () => {
       window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
       window.ethereum.removeListener('chainChanged', handleChainChanged);
+      window.removeEventListener('focus', handleFocus);
     };
-  }, [checkConnection, disconnect]);
+  }, [checkConnection, refreshWalletState]);
 
   return {
     account,
