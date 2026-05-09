@@ -20,6 +20,17 @@ const parseChainId = (value) => {
     : parseInt(value, 10);
 };
 
+const getInjectedProvider = () => {
+  if (typeof window === 'undefined' || typeof window.ethereum === 'undefined') return null;
+  const { ethereum } = window;
+
+  if (Array.isArray(ethereum.providers)) {
+    return ethereum.providers.find((provider) => provider.isMetaMask) || ethereum.providers[0];
+  }
+
+  return ethereum;
+};
+
 export function useWallet() {
   const [account, setAccount] = useState(null);
   const [chainId, setChainId] = useState(null);
@@ -43,17 +54,18 @@ export function useWallet() {
   }, []);
 
   const refreshWalletState = useCallback(async () => {
-    if (typeof window.ethereum === 'undefined') return;
+    const injectedProvider = getInjectedProvider();
+    if (!injectedProvider) return;
 
     const [accounts, currentChainId] = await Promise.all([
-      window.ethereum.request({ method: 'eth_accounts' }),
-      window.ethereum.request({ method: 'eth_chainId' }),
+      injectedProvider.request({ method: 'eth_accounts' }),
+      injectedProvider.request({ method: 'eth_chainId' }),
     ]);
 
     setChainId(parseChainId(currentChainId));
 
     if (accounts.length > 0) {
-      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      const browserProvider = new ethers.BrowserProvider(injectedProvider);
       const walletSigner = await browserProvider.getSigner();
 
       setAccount(accounts[0]);
@@ -68,7 +80,7 @@ export function useWallet() {
 
   // 检查钱包是否已连接
   const checkConnection = useCallback(async () => {
-    if (typeof window.ethereum === 'undefined') return;
+    if (!getInjectedProvider()) return;
 
     try {
       await refreshWalletState();
@@ -79,7 +91,8 @@ export function useWallet() {
 
   // 连接钱包
   const connect = useCallback(async () => {
-    if (typeof window.ethereum === 'undefined') {
+    const injectedProvider = getInjectedProvider();
+    if (!injectedProvider) {
       setError('请安装 MetaMask 钱包');
       return;
     }
@@ -88,20 +101,26 @@ export function useWallet() {
     setError(null);
 
     try {
-      const accounts = await window.ethereum.request({
+      const accounts = await injectedProvider.request({
         method: 'eth_requestAccounts',
       });
 
-      const browserProvider = new ethers.BrowserProvider(window.ethereum);
+      const browserProvider = new ethers.BrowserProvider(injectedProvider);
       const walletSigner = await browserProvider.getSigner();
-      const currentChainId = await window.ethereum.request({ method: 'eth_chainId' });
+      const currentChainId = await injectedProvider.request({ method: 'eth_chainId' });
 
       setAccount(accounts[0]);
       setChainId(parseChainId(currentChainId));
       setWalletProvider(browserProvider);
       setSigner(walletSigner);
     } catch (err) {
-      setError(err.message);
+      if (err?.code === -32002) {
+        setError('MetaMask 已有连接请求，请打开钱包确认');
+      } else if (err?.code === 4001) {
+        setError('您取消了钱包连接');
+      } else {
+        setError(err?.message || '连接钱包失败');
+      }
     } finally {
       setIsConnecting(false);
     }
@@ -109,10 +128,14 @@ export function useWallet() {
 
   // 切换网络
   const switchNetwork = useCallback(async () => {
-    if (typeof window.ethereum === 'undefined') return;
+    const injectedProvider = getInjectedProvider();
+    if (!injectedProvider) {
+      setError('请安装 MetaMask 钱包');
+      return;
+    }
 
     try {
-      await window.ethereum.request({
+      await injectedProvider.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId: CURRENT_NETWORK.chainId }],
       });
@@ -121,7 +144,7 @@ export function useWallet() {
       // 如果网络不存在，添加网络
       if (switchError.code === 4902) {
         try {
-          await window.ethereum.request({
+          await injectedProvider.request({
             method: 'wallet_addEthereumChain',
             params: [CURRENT_NETWORK],
           });
@@ -137,7 +160,8 @@ export function useWallet() {
 
   // 监听账户和网络变化
   useEffect(() => {
-    if (typeof window.ethereum === 'undefined') return;
+    const injectedProvider = getInjectedProvider();
+    if (!injectedProvider) return;
 
     const handleAccountsChanged = () => {
       refreshWalletState().catch((err) => console.error('Refresh wallet after account change error:', err));
@@ -152,15 +176,15 @@ export function useWallet() {
       refreshWalletState().catch((err) => console.error('Refresh wallet on focus error:', err));
     };
 
-    window.ethereum.on('accountsChanged', handleAccountsChanged);
-    window.ethereum.on('chainChanged', handleChainChanged);
+    injectedProvider.on?.('accountsChanged', handleAccountsChanged);
+    injectedProvider.on?.('chainChanged', handleChainChanged);
     window.addEventListener('focus', handleFocus);
 
     checkConnection();
 
     return () => {
-      window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-      window.ethereum.removeListener('chainChanged', handleChainChanged);
+      injectedProvider.removeListener?.('accountsChanged', handleAccountsChanged);
+      injectedProvider.removeListener?.('chainChanged', handleChainChanged);
       window.removeEventListener('focus', handleFocus);
     };
   }, [checkConnection, refreshWalletState]);

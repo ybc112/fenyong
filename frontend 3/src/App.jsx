@@ -29,6 +29,7 @@ function App() {
     signer,
     isConnecting,
     isCorrectNetwork,
+    error: walletError,
     connect,
     switchNetwork,
   } = useWallet();
@@ -119,6 +120,12 @@ function App() {
     refetchTokenBalance();
     refetchStakingAllowance();
   };
+
+  useEffect(() => {
+    if (walletError) {
+      toast.error(walletError);
+    }
+  }, [walletError]);
 
   const handleConfirmBind = async () => {
     if (!pendingReferrer || !contracts.stakingBank) return;
