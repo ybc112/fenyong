@@ -338,6 +338,10 @@ export default function TokenMiningPage({
     : 0;
 
   const currentTier = TIER_CONFIG[selectedTier];
+  const depositFeeRate = stakingData?.depositFeeConfig?.depositFee || 0;
+  const parsedDepositAmount = parseFloat(depositAmount || '0');
+  const estimatedDepositFee = parsedDepositAmount > 0 ? parsedDepositAmount * depositFeeRate / 100 : 0;
+  const estimatedPrincipal = parsedDepositAmount > 0 ? Math.max(parsedDepositAmount - estimatedDepositFee, 0) : 0;
 
   // 推荐人信息
   const hasReferrerBound = v3UserInfo?.referrer && v3UserInfo.referrer !== ethers.ZeroAddress;
@@ -535,16 +539,30 @@ export default function TokenMiningPage({
               {/* Estimated Earnings */}
               {depositAmount && parseFloat(depositAmount) > 0 && (
                 <div className="p-3 rounded-xl mb-4 text-sm bg-white/5 border border-white/5">
+                  {depositFeeRate > 0 && (
+                    <>
+                      <div className="flex justify-between mb-2">
+                        <span className="text-white/50">{t('tokenMining.depositFee')}</span>
+                        <span className="text-[#FFB800]">
+                          -{estimatedDepositFee.toFixed(4)} NBT ({depositFeeRate}%)
+                        </span>
+                      </div>
+                      <div className="flex justify-between mb-2">
+                        <span className="text-white/50">{t('tokenMining.actualPrincipal')}</span>
+                        <span className="text-white/70">{estimatedPrincipal.toFixed(4)} NBT</span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between mb-2">
                     <span className="text-white/50">{t('tokenMining.estimatedDaily')}</span>
                     <span className="font-medium" style={{ color: currentTier.color }}>
-                      +{(parseFloat(depositAmount) * currentTier.rate / 100).toFixed(4)} NBT
+                      +{(estimatedPrincipal * currentTier.rate / 100).toFixed(4)} NBT
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-white/50">{t('tokenMining.estimatedMonthly')}</span>
                     <span className="text-white/70">
-                      +{(parseFloat(depositAmount) * currentTier.rate / 100 * 30).toFixed(2)} NBT
+                      +{(estimatedPrincipal * currentTier.rate / 100 * 30).toFixed(2)} NBT
                     </span>
                   </div>
                 </div>

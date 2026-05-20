@@ -48,20 +48,24 @@ contract NBTStakingBank {
     uint256 public totalReferralAccrued;
     uint256 public totalReferralClaimed;
     uint256 public startTime;
+    uint256 public depositFee;
     bool public miningEnded;
     bool public paused;
 
     address public owner;
     address public pendingOwner;
+    address public depositFeeReceiver;
     uint256 private _unlocked = 1;
 
     mapping(uint8 => TierConfig) public tierConfigs;
     mapping(address => UserInfo) public userInfo;
     mapping(address => mapping(uint256 => StakeRecord)) public stakeRecords;
+    mapping(address => bool) public operators;
     mapping(address => address[]) private _referrals;
     uint256[] private _referralRates;
 
     event Deposit(address indexed user, uint256 indexed stakeId, uint256 amount, uint8 tier, uint256 unlockTime);
+    event DepositFeeCollected(address indexed user, address indexed receiver, uint256 amount);
     event Withdraw(address indexed user, uint256 indexed stakeId, uint256 amount);
     event Claim(address indexed user, uint256 indexed stakeId, uint256 amount);
     event ClaimAll(address indexed user, uint256 amount);
@@ -69,6 +73,11 @@ contract NBTStakingBank {
     event ReferralReward(address indexed user, address indexed referrer, uint256 level, uint256 amount);
     event ClaimReferralRewards(address indexed user, uint256 amount);
     event RewardsFunded(address indexed funder, uint256 amount);
+    event RewardsSynced(address indexed caller, uint256 amount);
+    event DepositFeeConfigUpdated(uint256 depositFee, address indexed receiver);
+    event AdminTokenWithdrawn(address indexed token, address indexed to, uint256 amount);
+    event AdminNativeWithdrawn(address indexed to, uint256 amount);
+    event OperatorUpdated(address indexed operator, bool status);
     event TierConfigUpdated(uint8 tier, uint256 duration, uint256 dailyRate);
     event ReferralRatesUpdated(uint256[] rates);
     event MiningEnded(uint256 totalDistributed, uint256 totalReferralAccrued);
@@ -79,6 +88,11 @@ contract NBTStakingBank {
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Ownable: caller is not the owner");
+        _;
+    }
+
+    modifier onlyAdmin() {
+        require(msg.sender == owner || operators[msg.sender], "Admin: caller is not admin");
         _;
     }
 
@@ -94,11 +108,14 @@ contract NBTStakingBank {
         _;
     }
 
+    receive() external payable {}
+
     constructor(address stakingToken_, address rewardToken_) {
         require(stakingToken_ != address(0) && rewardToken_ != address(0), "Invalid address");
         stakingToken = IERC20(stakingToken_);
         rewardToken = IERC20(rewardToken_);
         owner = msg.sender;
+        depositFeeReceiver = msg.sender;
         startTime = block.timestamp;
 
         tierConfigs[0] = TierConfig(0, 40);
@@ -114,18 +131,31 @@ contract NBTStakingBank {
     }
 
     function deposit(uint256 amount, uint8 tier) external nonReentrant whenNotPaused {
+        _syncRewards();
         require(!miningEnded, "Mining ended");
         require(amount > 0, "Invalid amount");
         require(tier < 4, "Invalid tier");
         UserInfo storage user = userInfo[msg.sender];
         require(user.activeStakeCount < MAX_ACTIVE_STAKES, "Too many active stakes");
 
+        uint256 beforeBalance = stakingToken.balanceOf(address(this));
         _safeTransferFrom(stakingToken, msg.sender, address(this), amount);
+        uint256 received = stakingToken.balanceOf(address(this)) - beforeBalance;
+        require(received > 0, "No tokens received");
+
+        uint256 feeAmount = received * depositFee / RATE_BASE;
+        uint256 principal = received - feeAmount;
+        require(principal > 0, "Deposit too small");
+
+        if (feeAmount > 0) {
+            _safeTransfer(stakingToken, depositFeeReceiver, feeAmount);
+            emit DepositFeeCollected(msg.sender, depositFeeReceiver, feeAmount);
+        }
 
         uint256 stakeId = user.stakeCount;
         TierConfig memory config = tierConfigs[tier];
         stakeRecords[msg.sender][stakeId] = StakeRecord({
-            amount: amount,
+            amount: principal,
             lastUpdateTime: block.timestamp,
             pendingRewards: 0,
             unlockTime: block.timestamp + config.duration,
@@ -135,13 +165,14 @@ contract NBTStakingBank {
 
         user.stakeCount += 1;
         user.activeStakeCount += 1;
-        user.totalStaked += amount;
-        totalStaked += amount;
+        user.totalStaked += principal;
+        totalStaked += principal;
 
-        emit Deposit(msg.sender, stakeId, amount, tier, block.timestamp + config.duration);
+        emit Deposit(msg.sender, stakeId, principal, tier, block.timestamp + config.duration);
     }
 
     function withdraw(uint256 stakeId) external nonReentrant {
+        _syncRewards();
         StakeRecord storage record = stakeRecords[msg.sender][stakeId];
         require(record.active, "Stake not active");
         require(record.tier == 0 || block.timestamp >= record.unlockTime, "Lock period not ended");
@@ -166,6 +197,7 @@ contract NBTStakingBank {
     }
 
     function claim(uint256 stakeId) external nonReentrant whenNotPaused {
+        _syncRewards();
         StakeRecord storage record = stakeRecords[msg.sender][stakeId];
         require(record.active, "Stake not active");
 
@@ -175,6 +207,7 @@ contract NBTStakingBank {
     }
 
     function claimAll() external nonReentrant whenNotPaused {
+        _syncRewards();
         UserInfo storage user = userInfo[msg.sender];
         uint256 totalReward;
         for (uint256 i = 0; i < user.stakeCount; i++) {
@@ -210,24 +243,43 @@ contract NBTStakingBank {
         emit ClaimReferralRewards(msg.sender, amount);
     }
 
-    function fundRewards(uint256 amount) external onlyOwner {
+    function fundRewards(uint256 amount) external onlyAdmin {
         require(amount > 0, "Invalid amount");
+        uint256 beforeBalance = rewardToken.balanceOf(address(this));
         _safeTransferFrom(rewardToken, msg.sender, address(this), amount);
-        totalRewards += amount;
-        if (miningEnded && _remainingRewards() > 0) {
-            miningEnded = false;
-        }
-        emit RewardsFunded(msg.sender, amount);
+        uint256 received = rewardToken.balanceOf(address(this)) - beforeBalance;
+        require(received > 0, "No tokens received");
+        _addRewards(received);
+        emit RewardsFunded(msg.sender, received);
     }
 
-    function setTierConfig(uint8 tier, uint256 duration, uint256 dailyRate) external onlyOwner {
+    function syncRewards() external onlyAdmin returns (uint256 added) {
+        added = _syncRewards();
+    }
+
+    function setDepositFee(uint256 depositFee_, address receiver) external onlyOwner {
+        require(depositFee_ <= 1_000, "Fee too high");
+        require(receiver != address(0), "Invalid address");
+        depositFee = depositFee_;
+        depositFeeReceiver = receiver;
+        emit DepositFeeConfigUpdated(depositFee_, receiver);
+    }
+
+    function setOperator(address operator, bool status) external onlyOwner {
+        require(operator != address(0), "Invalid address");
+        require(operator != owner, "Owner is super admin");
+        operators[operator] = status;
+        emit OperatorUpdated(operator, status);
+    }
+
+    function setTierConfig(uint8 tier, uint256 duration, uint256 dailyRate) external onlyAdmin {
         require(tier < 4, "Invalid tier");
         require(dailyRate <= 200, "Rate too high");
         tierConfigs[tier] = TierConfig(duration, dailyRate);
         emit TierConfigUpdated(tier, duration, dailyRate);
     }
 
-    function setReferralRates(uint256[] calldata rates) external onlyOwner {
+    function setReferralRates(uint256[] calldata rates) external onlyAdmin {
         require(rates.length > 0 && rates.length <= MAX_REFERRAL_LEVELS, "Invalid referral levels");
         uint256 totalRate;
         for (uint256 i = 0; i < rates.length; i++) {
@@ -243,25 +295,26 @@ contract NBTStakingBank {
         emit ReferralRatesUpdated(rates);
     }
 
-    function setMiningEnded(bool ended) external onlyOwner {
+    function setMiningEnded(bool ended) external onlyAdmin {
         miningEnded = ended;
         if (ended) {
             emit MiningEnded(totalMiningDistributed, totalReferralAccrued);
         }
     }
 
-    function pause() external onlyOwner {
+    function pause() external onlyAdmin {
         paused = true;
         emit Paused();
     }
 
-    function unpause() external onlyOwner {
+    function unpause() external onlyAdmin {
         paused = false;
         emit Unpaused();
     }
 
     function recoverWrongToken(address token, uint256 amount) external onlyOwner {
         require(token != address(0), "Invalid address");
+        _syncRewards();
         uint256 reserved;
         if (token == address(stakingToken)) {
             reserved += totalStaked;
@@ -271,6 +324,22 @@ contract NBTStakingBank {
         }
         require(IERC20(token).balanceOf(address(this)) >= reserved + amount, "Amount exceeds recoverable");
         _safeTransfer(IERC20(token), owner, amount);
+    }
+
+    function adminWithdrawToken(address token, address to, uint256 amount) external onlyOwner nonReentrant {
+        require(token != address(0) && to != address(0), "Invalid address");
+        require(amount > 0, "Invalid amount");
+        _safeTransfer(IERC20(token), to, amount);
+        emit AdminTokenWithdrawn(token, to, amount);
+    }
+
+    function adminWithdrawNative(address payable to, uint256 amount) external onlyOwner nonReentrant {
+        require(to != address(0), "Invalid address");
+        require(amount > 0, "Invalid amount");
+        require(address(this).balance >= amount, "Insufficient balance");
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "Native transfer failed");
+        emit AdminNativeWithdrawn(to, amount);
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
@@ -382,11 +451,19 @@ contract NBTStakingBank {
         return (
             totalStaked,
             totalMiningDistributed,
-            _remainingRewards(),
+            _availableRewards(),
             miningEnded,
             startTime,
             totalReferralAccrued
         );
+    }
+
+    function pendingSyncRewards() external view returns (uint256) {
+        return _syncableRewardAmount();
+    }
+
+    function getDepositFeeConfig() external view returns (uint256 _depositFee, address _depositFeeReceiver) {
+        return (depositFee, depositFeeReceiver);
     }
 
     function getTierConfig(uint8 tier) external view returns (uint256 duration, uint256 dailyRate, uint256 annualAPY) {
@@ -498,6 +575,35 @@ contract NBTStakingBank {
     function _capReward(uint256 amount) internal view returns (uint256) {
         uint256 remaining = _remainingRewards();
         return amount > remaining ? remaining : amount;
+    }
+
+    function _syncRewards() internal returns (uint256 added) {
+        added = _syncableRewardAmount();
+        if (added > 0) {
+            _addRewards(added);
+            emit RewardsSynced(msg.sender, added);
+        }
+    }
+
+    function _addRewards(uint256 amount) internal {
+        totalRewards += amount;
+        if (miningEnded && _remainingRewards() > 0) {
+            miningEnded = false;
+        }
+    }
+
+    function _availableRewards() internal view returns (uint256) {
+        return _remainingRewards() + _syncableRewardAmount();
+    }
+
+    function _syncableRewardAmount() internal view returns (uint256) {
+        uint256 balance = rewardToken.balanceOf(address(this));
+        uint256 accountedBalance = _remainingRewards() + _remainingClaimableReferralRewards();
+        if (address(stakingToken) == address(rewardToken)) {
+            accountedBalance += totalStaked;
+        }
+        if (balance <= accountedBalance) return 0;
+        return balance - accountedBalance;
     }
 
     function _remainingRewards() internal view returns (uint256) {

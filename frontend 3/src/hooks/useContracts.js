@@ -60,6 +60,8 @@ export function useStakingBank(contract, account) {
     referralLevels: 0,
     referrals: [],
     referralsTotal: 0,
+    pendingSyncRewards: '0',
+    depositFeeConfig: null,
     isPaused: false,
     loading: true,
   });
@@ -71,13 +73,25 @@ export function useStakingBank(contract, account) {
     }
 
     try {
-      const [miningStatus, tierConfigs, referralRates, referralLevels, isPaused] = await retryCall(() =>
+      const [
+        miningStatus,
+        tierConfigs,
+        referralRates,
+        referralLevels,
+        isPaused,
+        pendingSyncRewards,
+        depositFeeConfig,
+      ] = await retryCall(() =>
         Promise.all([
           contract.getMiningStatus(),
           contract.getAllTierConfigs(),
           contract.getReferralRates().catch(() => []),
           contract.getReferralLevels().catch(() => 0),
           contract.paused ? contract.paused().catch(() => false) : Promise.resolve(false),
+          contract.pendingSyncRewards ? contract.pendingSyncRewards().catch(() => 0n) : Promise.resolve(0n),
+          contract.getDepositFeeConfig
+            ? contract.getDepositFeeConfig().catch(() => ({ _depositFee: 0n, _depositFeeReceiver: ethers.ZeroAddress }))
+            : Promise.resolve({ _depositFee: 0n, _depositFeeReceiver: ethers.ZeroAddress }),
         ])
       );
 
@@ -146,6 +160,11 @@ export function useStakingBank(contract, account) {
         referralLevels: Number(referralLevels),
         referrals,
         referralsTotal,
+        pendingSyncRewards: ethers.formatEther(pendingSyncRewards),
+        depositFeeConfig: {
+          depositFee: Number(depositFeeConfig._depositFee || 0) / 100,
+          depositFeeReceiver: depositFeeConfig._depositFeeReceiver || ethers.ZeroAddress,
+        },
         isPaused,
         loading: false,
       });

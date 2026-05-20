@@ -1,0 +1,15 @@
+{
+  "network": "bsc-testnet",
+  "chainId": 97,
+  "timestamp": "2026-05-20T03-25-26-357Z",
+  "deployer": "0xD09Dc26F1c20E85879863A7e932735749efC1835",
+  "nbtToken": "0xBAfeA814e916EA4E5088a9D4028a8710dE8f202A",
+  "stakingBank": "0xc1EBebac660d00a290150D7691B22fD05f46942A",
+  "nbtPair": "",
+  "tokenName": "NBT",
+  "tokenSymbol": "NBT",
+  "initialSupply": "100000000",
+  "feeReceiver": "0xD09Dc26F1c20E85879863A7e932735749efC1835",
+  "initialRewardFund": "0",
+  "frontendEnvPath": "/mnt/e/dapp/质押项目/frontend 3/.env"
+}

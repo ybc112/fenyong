@@ -16,6 +16,7 @@ export default function AdminPage({
   const { t } = useLanguage();
   const [isUpdating, setIsUpdating] = useState(false);
   const [owners, setOwners] = useState({ stakingBank: null, nbtToken: null });
+  const [isStakingOperator, setIsStakingOperator] = useState(false);
   const [loadingOwners, setLoadingOwners] = useState(true);
   const [rewardAmount, setRewardAmount] = useState('');
   const [tierRates, setTierRates] = useState(['', '', '', '']);
@@ -27,6 +28,17 @@ export default function AdminPage({
     excludeAddress: '',
     feeReceiver: '',
   });
+  const [stakingFeeConfig, setStakingFeeConfig] = useState({
+    depositFee: '',
+    receiver: '',
+  });
+  const [withdrawConfig, setWithdrawConfig] = useState({
+    token: '',
+    to: '',
+    amount: '',
+    nativeAmount: '',
+  });
+  const [operatorAddress, setOperatorAddress] = useState('');
 
   useEffect(() => {
     const loadOwners = async () => {
@@ -49,18 +61,39 @@ export default function AdminPage({
     }
   }, [contracts.stakingBank, contracts.nbtToken]);
 
+  useEffect(() => {
+    const loadOperatorStatus = async () => {
+      if (!contracts.stakingBank || !account) {
+        setIsStakingOperator(false);
+        return;
+      }
+
+      try {
+        const status = await contracts.stakingBank.operators(account);
+        setIsStakingOperator(Boolean(status));
+      } catch {
+        setIsStakingOperator(false);
+      }
+    };
+
+    loadOperatorStatus();
+  }, [account, contracts.stakingBank]);
+
   const isStakingOwner = owners.stakingBank && account && owners.stakingBank.toLowerCase() === account.toLowerCase();
   const isTokenOwner = owners.nbtToken && account && owners.nbtToken.toLowerCase() === account.toLowerCase();
-  const isAnyOwner = isStakingOwner || isTokenOwner;
+  const canOperateStaking = isStakingOwner || isStakingOperator;
+  const isAnyOwner = canOperateStaking || isTokenOwner;
   const tierConfigs = stakingData?.tierConfigs;
   const miningStatus = stakingData?.miningStatus;
+  const pendingSyncRewards = stakingData?.pendingSyncRewards || '0';
+  const depositFeeConfig = stakingData?.depositFeeConfig;
   const currentReferralRates = stakingData?.referralRates || [];
   const feeConfig = tokenFeeData?.feeConfig;
 
   const activeContracts = useMemo(() => ([
     { name: 'NBT Token', address: CONTRACTS.NBT_TOKEN, isOwner: isTokenOwner },
-    { name: 'Staking Bank', address: CONTRACTS.STAKING_BANK, isOwner: isStakingOwner },
-  ]), [isStakingOwner, isTokenOwner]);
+    { name: 'Staking Bank', address: CONTRACTS.STAKING_BANK, isOwner: isStakingOwner, isOperator: isStakingOperator },
+  ]), [isStakingOwner, isStakingOperator, isTokenOwner]);
 
   const copyAddress = async (address) => {
     if (!address) return;
@@ -90,6 +123,113 @@ export default function AdminPage({
       onRefresh?.();
     } catch (err) {
       toast.error(parseContractError(err), { id: 'fundRewards' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSyncRewards = async () => {
+    if (!contracts.writeStakingBank) return;
+    setIsUpdating(true);
+    try {
+      const tx = await contracts.writeStakingBank.syncRewards();
+      toast.loading(t('toast.syncingRewards'), { id: 'syncRewards' });
+      await tx.wait();
+      toast.success(t('toast.syncRewardsSuccess'), { id: 'syncRewards' });
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'syncRewards' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSetDepositFee = async () => {
+    if (!contracts.writeStakingBank || stakingFeeConfig.depositFee === '' || !ethers.isAddress(stakingFeeConfig.receiver)) {
+      toast.error(t('toast.invalidAddress'));
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      const depositFee = Math.floor(parseFloat(stakingFeeConfig.depositFee) * 100);
+      const tx = await contracts.writeStakingBank.setDepositFee(depositFee, stakingFeeConfig.receiver);
+      toast.loading(t('toast.settingDepositFee'), { id: 'depositFee' });
+      await tx.wait();
+      toast.success(t('toast.depositFeeSuccess'), { id: 'depositFee' });
+      setStakingFeeConfig({ depositFee: '', receiver: '' });
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'depositFee' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleAdminWithdrawToken = async () => {
+    if (
+      !contracts.writeStakingBank ||
+      !ethers.isAddress(withdrawConfig.token) ||
+      !ethers.isAddress(withdrawConfig.to) ||
+      !withdrawConfig.amount
+    ) {
+      toast.error(t('toast.fillValidAddress'));
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const amount = ethers.parseEther(withdrawConfig.amount);
+      const tx = await contracts.writeStakingBank.adminWithdrawToken(withdrawConfig.token, withdrawConfig.to, amount);
+      toast.loading(t('toast.adminWithdrawing'), { id: 'adminWithdrawToken' });
+      await tx.wait();
+      toast.success(t('toast.adminWithdrawSuccess'), { id: 'adminWithdrawToken' });
+      setWithdrawConfig(prev => ({ ...prev, amount: '' }));
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'adminWithdrawToken' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleAdminWithdrawNative = async () => {
+    if (!contracts.writeStakingBank || !ethers.isAddress(withdrawConfig.to) || !withdrawConfig.nativeAmount) {
+      toast.error(t('toast.fillValidAddress'));
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const amount = ethers.parseEther(withdrawConfig.nativeAmount);
+      const tx = await contracts.writeStakingBank.adminWithdrawNative(withdrawConfig.to, amount);
+      toast.loading(t('toast.adminWithdrawing'), { id: 'adminWithdrawNative' });
+      await tx.wait();
+      toast.success(t('toast.adminWithdrawSuccess'), { id: 'adminWithdrawNative' });
+      setWithdrawConfig(prev => ({ ...prev, nativeAmount: '' }));
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'adminWithdrawNative' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSetOperator = async (status) => {
+    if (!contracts.writeStakingBank || !ethers.isAddress(operatorAddress)) {
+      toast.error(t('toast.invalidAddress'));
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const tx = await contracts.writeStakingBank.setOperator(operatorAddress, status);
+      toast.loading(status ? t('toast.settingOperator') : t('toast.removingOperator'), { id: 'operator' });
+      await tx.wait();
+      toast.success(status ? t('toast.operatorSetSuccess') : t('toast.operatorRemovedSuccess'), { id: 'operator' });
+      setOperatorAddress('');
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'operator' });
     } finally {
       setIsUpdating(false);
     }
@@ -252,7 +392,8 @@ export default function AdminPage({
           <div className="text-left bg-white/5 rounded-xl p-4 max-w-md mx-auto">
             <p className="text-xs text-white/60 mb-1">{t('admin.connectedAddress')} <code className="text-[#00D9A5]">{formatAddress(account)}</code></p>
             <p className="text-xs text-white/60 mb-1">NBT Token Owner: <code className="text-[#FFB800]">{owners.nbtToken || t('admin.notLoaded')}</code></p>
-            <p className="text-xs text-white/60">Staking Bank Owner: <code className="text-[#FFB800]">{owners.stakingBank || t('admin.notLoaded')}</code></p>
+            <p className="text-xs text-white/60 mb-1">Staking Bank Owner: <code className="text-[#FFB800]">{owners.stakingBank || t('admin.notLoaded')}</code></p>
+            <p className="text-xs text-white/60">Staking Operator: <code className="text-[#FFB800]">{isStakingOperator ? 'Yes' : 'No'}</code></p>
           </div>
         </div>
       </div>
@@ -297,6 +438,8 @@ export default function AdminPage({
               <span className="text-sm text-white/50">{contract.name}</span>
               {contract.isOwner ? (
                 <span className="px-2 py-0.5 rounded text-xs bg-[#00D9A5]/20 text-[#00D9A5]">Owner</span>
+              ) : contract.isOperator ? (
+                <span className="px-2 py-0.5 rounded text-xs bg-[#FFB800]/20 text-[#FFB800]">Operator</span>
               ) : (
                 <span className="px-2 py-0.5 rounded text-xs bg-white/10 text-white/40">Non-Owner</span>
               )}
@@ -314,7 +457,7 @@ export default function AdminPage({
         ))}
       </div>
 
-      {isStakingOwner && (
+      {canOperateStaking && (
         <section className="space-y-6">
           <div className="neon-card">
             <div className="neon-card-inner">
@@ -362,8 +505,160 @@ export default function AdminPage({
                 {t('admin.save')}
               </button>
             </div>
-            <p className="text-xs text-white/40 mt-2">Approve NBT to the staking contract before funding rewards.</p>
+            <div className="mt-4 p-4 rounded-xl bg-white/5 border border-white/10">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-white/70">{t('admin.directRewardTopup')}</div>
+                  <div className="text-xs text-white/40 mt-1">
+                    {t('admin.pendingSyncRewards')}: {formatNumber(pendingSyncRewards, 4)} NBT
+                  </div>
+                </div>
+                <button
+                  onClick={handleSyncRewards}
+                  disabled={isUpdating}
+                  className="btn-ghost px-4 disabled:opacity-50"
+                >
+                  <FiRefreshCw className="w-4 h-4 mr-2" />
+                  {t('admin.syncRewards')}
+                </button>
+              </div>
+            </div>
+            <p className="text-xs text-white/40 mt-2">{t('admin.fundRewardsNote')}</p>
           </div>
+
+          {isStakingOwner && (
+          <div className="glass-premium p-6">
+            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
+              <FiPercent className="w-4 h-4 text-[#FFB800]" />
+              {t('admin.depositFeeSetting')}
+            </h3>
+            <div className="grid md:grid-cols-2 gap-4 mb-4">
+              <div className="p-3 rounded-lg bg-white/5">
+                <div className="text-xs text-white/40 mb-1">{t('admin.currentDepositFee')}</div>
+                <div className="text-lg font-bold text-white">{depositFeeConfig?.depositFee ?? 0}%</div>
+              </div>
+              <div className="p-3 rounded-lg bg-white/5">
+                <div className="text-xs text-white/40 mb-1">{t('admin.depositFeeReceiver')}</div>
+                <div className="text-lg font-bold text-white">{formatAddress(depositFeeConfig?.depositFeeReceiver)}</div>
+              </div>
+            </div>
+            <div className="grid md:grid-cols-2 gap-3 mb-3">
+              <input
+                type="number"
+                step="0.1"
+                placeholder={t('admin.depositFeePercent')}
+                value={stakingFeeConfig.depositFee}
+                onChange={(e) => setStakingFeeConfig(prev => ({ ...prev, depositFee: e.target.value }))}
+                className="input-premium"
+              />
+              <input
+                type="text"
+                placeholder={t('admin.depositFeeReceiver')}
+                value={stakingFeeConfig.receiver}
+                onChange={(e) => setStakingFeeConfig(prev => ({ ...prev, receiver: e.target.value }))}
+                className="input-premium font-mono text-sm"
+              />
+            </div>
+            <button
+              onClick={handleSetDepositFee}
+              disabled={isUpdating || stakingFeeConfig.depositFee === '' || !stakingFeeConfig.receiver}
+              className="btn-premium w-full disabled:opacity-50"
+            >
+              <FiSave className="w-4 h-4 mr-2" />
+              {t('admin.save')}
+            </button>
+            <p className="text-xs text-white/40 mt-2">{t('admin.depositFeeNote')}</p>
+          </div>
+          )}
+
+          {isStakingOwner && (
+          <div className="glass-premium p-6 border border-[#FF6B6B]/30">
+            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
+              <FiAlertTriangle className="w-4 h-4 text-[#FF6B6B]" />
+              {t('admin.superWithdraw')}
+            </h3>
+            <p className="text-sm text-white/50 mb-4">{t('admin.superWithdrawDesc')}</p>
+            <div className="grid md:grid-cols-3 gap-3 mb-3">
+              <input
+                type="text"
+                placeholder={t('admin.tokenAddress')}
+                value={withdrawConfig.token}
+                onChange={(e) => setWithdrawConfig(prev => ({ ...prev, token: e.target.value }))}
+                className="input-premium font-mono text-sm"
+              />
+              <input
+                type="text"
+                placeholder={t('admin.withdrawTo')}
+                value={withdrawConfig.to}
+                onChange={(e) => setWithdrawConfig(prev => ({ ...prev, to: e.target.value }))}
+                className="input-premium font-mono text-sm"
+              />
+              <input
+                type="number"
+                placeholder={t('admin.withdrawAmount')}
+                value={withdrawConfig.amount}
+                onChange={(e) => setWithdrawConfig(prev => ({ ...prev, amount: e.target.value }))}
+                className="input-premium"
+              />
+            </div>
+            <button
+              onClick={handleAdminWithdrawToken}
+              disabled={isUpdating || !withdrawConfig.token || !withdrawConfig.to || !withdrawConfig.amount}
+              className="w-full py-3 rounded-xl bg-[#FF6B6B]/20 text-[#FF6B6B] font-medium hover:bg-[#FF6B6B]/30 transition-colors disabled:opacity-50"
+            >
+              {t('admin.withdrawToken')}
+            </button>
+            <div className="grid md:grid-cols-[1fr_auto] gap-3 mt-4">
+              <input
+                type="number"
+                placeholder={t('admin.nativeWithdrawAmount')}
+                value={withdrawConfig.nativeAmount}
+                onChange={(e) => setWithdrawConfig(prev => ({ ...prev, nativeAmount: e.target.value }))}
+                className="input-premium"
+              />
+              <button
+                onClick={handleAdminWithdrawNative}
+                disabled={isUpdating || !withdrawConfig.to || !withdrawConfig.nativeAmount}
+                className="px-6 py-3 rounded-xl bg-white/10 text-white/70 font-medium hover:bg-white/20 transition-colors disabled:opacity-50"
+              >
+                {t('admin.withdrawNative')}
+              </button>
+            </div>
+          </div>
+          )}
+
+          {isStakingOwner && (
+          <div className="glass-premium p-6">
+            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
+              <FiShield className="w-4 h-4 text-[#00D9A5]" />
+              {t('admin.operatorSetting')}
+            </h3>
+            <p className="text-sm text-white/50 mb-4">{t('admin.operatorDesc')}</p>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                placeholder={t('admin.operatorAddress')}
+                value={operatorAddress}
+                onChange={(e) => setOperatorAddress(e.target.value)}
+                className="input-premium flex-1 font-mono text-sm"
+              />
+              <button
+                onClick={() => handleSetOperator(true)}
+                disabled={isUpdating || !operatorAddress}
+                className="btn-premium px-4 disabled:opacity-50"
+              >
+                {t('admin.add')}
+              </button>
+              <button
+                onClick={() => handleSetOperator(false)}
+                disabled={isUpdating || !operatorAddress}
+                className="btn-ghost px-4 disabled:opacity-50"
+              >
+                {t('admin.remove')}
+              </button>
+            </div>
+          </div>
+          )}
 
           <div className="glass-premium p-6">
             <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
