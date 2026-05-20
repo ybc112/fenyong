@@ -80,7 +80,7 @@ async function main() {
   const privateKey = requireEnv('PRIVATE_KEY');
   const tokenName = optionalEnv('TOKEN_NAME', 'NBT');
   const tokenSymbol = optionalEnv('TOKEN_SYMBOL', 'NBT');
-  const initialSupply = optionalEnv('INITIAL_SUPPLY', '100000000');
+  const initialSupply = optionalEnv('INITIAL_SUPPLY', '200000000');
   const initialRewardFund = optionalEnv('INITIAL_REWARD_FUND', '0');
   const deploymentsDir = path.resolve(rootDir, optionalEnv('DEPLOYMENTS_DIR', 'deployments'));
   const frontendEnvPath = path.resolve(rootDir, optionalEnv('FRONTEND_ENV_PATH', 'frontend 3/.env'));

@@ -19,7 +19,7 @@ const translations = {
       title1: "链上银行",
       title2: "轻松赚取收益",
       subtitle: "存币生息 + 推荐奖励 + 团队奖励",
-      totalReward: "总计 8000 万 NBT 代币奖励",
+      totalReward: "总发行 2 亿 NBT 代币",
       startMining: "开始存币",
       inviteFriends: "邀请好友",
       tokenPoolStaked: "存币池总额",
@@ -31,7 +31,7 @@ const translations = {
       tokenMiningSubtitle: "40% 代币分配",
       tokenMiningDesc:
         "多档锁仓，收益更高！灵活质押146% APY，12个月锁仓365% APY",
-      tokenMiningStats: "3000万 NBT",
+      tokenMiningStats: "8000万 NBT",
       referralTitle: "三级推荐奖励",
       referralSubtitle: "最高 35% 额外收益",
       referralDesc: "邀请好友参与挖矿，1代20%、2代10%、3代5% 推荐奖励",
@@ -441,7 +441,7 @@ const translations = {
       title1: "Stake Mining",
       title2: "Earn Rewards Easily",
       subtitle: "Token Savings + Referral Rewards + Team Rewards",
-      totalReward: "Total 80 Million NBT Token Rewards",
+      totalReward: "Total Supply 200 Million NBT Tokens",
       startMining: "Start Saving",
       inviteFriends: "Invite Friends",
       tokenPoolStaked: "Savings Pool Staked",
@@ -454,7 +454,7 @@ const translations = {
       tokenMiningSubtitle: "40% Token Allocation",
       tokenMiningDesc:
         "Multi-tier lockup, higher yields! Flexible 146% APY, 12-month lock 365% APY",
-      tokenMiningStats: "30M NBT",
+      tokenMiningStats: "80M NBT",
       referralTitle: "3-Level Referral Rewards",
       referralSubtitle: "Up to 35% Extra Earnings",
       referralDesc:
