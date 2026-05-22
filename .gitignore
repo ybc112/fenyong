@@ -15,10 +15,18 @@ frontend 3/.env
 frontend 3/.env.*
 !frontend 3/.env.example
 
-# Foundry output
+# Foundry / Hardhat output
 cache/
 out/
 broadcast/
+artifacts/
+ignition/
+
+# Hardhat cache
+hardhat-cache/
+
+# Foundry installer
+foundry.ps1
 
 # Local assistant/tooling metadata
 .agents/

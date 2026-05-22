@@ -21,13 +21,7 @@ export default function AdminPage({
   const [rewardAmount, setRewardAmount] = useState('');
   const [tierRates, setTierRates] = useState(['', '', '', '']);
   const [referralRates, setReferralRates] = useState(['', '', '']);
-  const [tokenConfig, setTokenConfig] = useState({
-    buyFee: '',
-    sellFee: '',
-    pairAddress: '',
-    excludeAddress: '',
-    feeReceiver: '',
-  });
+  const [tokenConfig, setTokenConfig] = useState({});
   const [stakingFeeConfig, setStakingFeeConfig] = useState({
     depositFee: '',
     receiver: '',
@@ -274,6 +268,85 @@ export default function AdminPage({
       onRefresh?.();
     } catch (err) {
       toast.error(parseContractError(err), { id: 'refRates' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSetFees = async () => {
+    if (!contracts.writeNbtToken || tokenConfig.buyFee === '' || tokenConfig.sellFee === '') return;
+    setIsUpdating(true);
+    try {
+      const buyFee = Math.floor(parseFloat(tokenConfig.buyFee) * 100);
+      const sellFee = Math.floor(parseFloat(tokenConfig.sellFee) * 100);
+      const tx = await contracts.writeNbtToken.setFees(buyFee, sellFee);
+      toast.loading(t('toast.settingFees'), { id: 'fees' });
+      await tx.wait();
+      toast.success(t('toast.feesSuccess'), { id: 'fees' });
+      setTokenConfig(prev => ({ ...prev, buyFee: '', sellFee: '' }));
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'fees' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSetPair = async () => {
+    if (!contracts.writeNbtToken || !ethers.isAddress(tokenConfig.pairAddress)) {
+      toast.error(t('toast.invalidAddress'));
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      const tx = await contracts.writeNbtToken.setPair(tokenConfig.pairAddress, true);
+      toast.loading(t('toast.settingPair'), { id: 'pair' });
+      await tx.wait();
+      toast.success(t('toast.pairSuccess'), { id: 'pair' });
+      setTokenConfig(prev => ({ ...prev, pairAddress: '' }));
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'pair' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSetExcluded = async (status) => {
+    if (!contracts.writeNbtToken || !ethers.isAddress(tokenConfig.excludeAddress)) {
+      toast.error(t('toast.invalidAddress'));
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      const tx = await contracts.writeNbtToken.setExcludedFromFee(tokenConfig.excludeAddress, status);
+      toast.loading(status ? t('toast.addingWhitelist') : t('toast.removingWhitelist'), { id: 'exclude' });
+      await tx.wait();
+      toast.success(status ? t('toast.whitelistAdded') : t('toast.whitelistRemoved'), { id: 'exclude' });
+      setTokenConfig(prev => ({ ...prev, excludeAddress: '' }));
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'exclude' });
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleSetFeeReceiver = async () => {
+    if (!contracts.writeNbtToken || !ethers.isAddress(tokenConfig.feeReceiver)) {
+      toast.error(t('toast.invalidAddress'));
+      return;
+    }
+    setIsUpdating(true);
+    try {
+      const tx = await contracts.writeNbtToken.setFeeReceiver(tokenConfig.feeReceiver);
+      toast.loading(t('toast.settingFeeReceiver'), { id: 'receiver' });
+      await tx.wait();
+      toast.success(t('toast.feeReceiverSuccess'), { id: 'receiver' });
+      setTokenConfig(prev => ({ ...prev, feeReceiver: '' }));
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'receiver' });
     } finally {
       setIsUpdating(false);
     }

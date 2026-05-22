@@ -30,7 +30,7 @@ function loadDotenv(filePath) {
 function requireEnv(name) {
   const value = process.env[name];
   if (!value || value.includes('YOUR_')) {
-    throw new Error(`Missing ${name}. Copy .env.example to .env and fill ${name}.`);
+    throw new Error(`Missing ${name}. Copy .env.mainnet to .env and fill ${name}.`);
   }
   return value;
 }
@@ -50,7 +50,7 @@ function artifact(contractFile, contractName) {
 
 function writeFrontendEnv(filePath, values) {
   const envContent = [
-    'VITE_CHAIN_ID=0x61',
+    'VITE_CHAIN_ID=0x38',
     `VITE_NBT_TOKEN=${values.nbtToken}`,
     `VITE_STAKING_BANK=${values.stakingBank}`,
     `VITE_NBT_PAIR=${values.nbtPair || ''}`,
@@ -61,7 +61,7 @@ function writeFrontendEnv(filePath, values) {
 
 function writeDeploymentJson(dirPath, payload) {
   mkdirSync(dirPath, { recursive: true });
-  const filePath = path.join(dirPath, `bsc-testnet-${payload.timestamp}.json`);
+  const filePath = path.join(dirPath, `bsc-mainnet-${payload.timestamp}.json`);
   writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`);
   return filePath;
 }
@@ -74,9 +74,9 @@ async function wait(tx, label) {
 }
 
 async function main() {
-  loadDotenv(path.join(rootDir, '.env'));
+  loadDotenv(path.join(rootDir, '.env.mainnet'));
 
-  const rpcUrl = optionalEnv('BSC_TESTNET_RPC_URL', 'https://data-seed-prebsc-1-s1.binance.org:8545/');
+  const rpcUrl = optionalEnv('BSC_MAINNET_RPC_URL', 'https://bsc-dataseed.binance.org/');
   const privateKey = requireEnv('PRIVATE_KEY');
   const tokenName = optionalEnv('TOKEN_NAME', 'NBT');
   const tokenSymbol = optionalEnv('TOKEN_SYMBOL', 'NBT');
@@ -91,8 +91,8 @@ async function main() {
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const wallet = new ethers.Wallet(privateKey, provider);
   const network = await provider.getNetwork();
-  if (Number(network.chainId) !== 97) {
-    throw new Error(`Expected BSC Testnet chain id 97, got ${network.chainId}. Check BSC_TESTNET_RPC_URL.`);
+  if (Number(network.chainId) !== 56) {
+    throw new Error(`Expected BSC Mainnet chain id 56, got ${network.chainId}. Check BSC_MAINNET_RPC_URL.`);
   }
 
   const deployer = await wallet.getAddress();
@@ -103,7 +103,11 @@ async function main() {
 
   const balance = await provider.getBalance(deployer);
   console.log(`Deployer: ${deployer}`);
-  console.log(`tBNB balance: ${ethers.formatEther(balance)}`);
+  console.log(`BNB balance: ${ethers.formatEther(balance)}`);
+
+  if (balance < ethers.parseEther('0.01')) {
+    console.warn('WARNING: BNB balance is very low. Deployment may fail due to insufficient gas.');
+  }
 
   const tokenArtifact = artifact('NBTToken.sol', 'NBTToken');
   const stakingArtifact = artifact('NBTStakingBank.sol', 'NBTStakingBank');
@@ -120,6 +124,20 @@ async function main() {
   }
   const initialPairs = nbtPair ? [nbtPair] : [];
   const initialExcluded = [];
+
+  console.log('\n========== DEPLOYMENT CONFIG ==========');
+  console.log(`Network: BSC Mainnet (Chain ID: 56)`);
+  console.log(`Token Name: ${tokenName}`);
+  console.log(`Token Symbol: ${tokenSymbol}`);
+  console.log(`Initial Supply: ${initialSupply}`);
+  console.log(`Buy Fee: ${buyFee / 100}%`);
+  console.log(`Sell Fee: ${sellFee / 100}%`);
+  console.log(`Fee Receiver: ${feeReceiver}`);
+  console.log(`NBT Pair: ${nbtPair || '(none)'}`);
+  console.log(`Initial Reward Fund: ${initialRewardFund}`);
+  console.log('=======================================\n');
+
+  console.log('Deploying NBTToken...');
   const token = await tokenFactory.deploy(
     tokenName,
     tokenSymbol,
@@ -137,6 +155,7 @@ async function main() {
   console.log(`  initial pairs: ${initialPairs.length ? initialPairs.join(', ') : '(none)'}`);
   console.log('  Token has NO owner — all fee/pair settings are immutable.');
 
+  console.log('\nDeploying NBTStakingBank...');
   const stakingFactory = new ethers.ContractFactory(stakingArtifact.abi, stakingArtifact.bytecode.object, wallet);
   const staking = await stakingFactory.deploy(nbtToken, nbtToken);
   await staking.waitForDeployment();
@@ -145,6 +164,7 @@ async function main() {
 
   const rewardFundWei = ethers.parseEther(initialRewardFund);
   if (rewardFundWei > 0n) {
+    console.log('\nFunding initial rewards...');
     await wait(await token.approve(stakingBank, rewardFundWei), 'Approve initial rewards');
     await wait(await staking.fundRewards(rewardFundWei), 'Fund initial rewards');
   }
@@ -153,7 +173,7 @@ async function main() {
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const deploymentPath = writeDeploymentJson(deploymentsDir, {
-    network: 'bsc-testnet',
+    network: 'bsc-mainnet',
     chainId: Number(network.chainId),
     timestamp,
     deployer,
@@ -168,11 +188,15 @@ async function main() {
     frontendEnvPath,
   });
 
-  console.log('');
-  console.log('Deployment complete.');
+  console.log('\n========== DEPLOYMENT COMPLETE ==========');
+  console.log(`Network: BSC Mainnet`);
+  console.log(`NBTToken: ${nbtToken}`);
+  console.log(`StakingBank: ${stakingBank}`);
+  console.log(`Deployer: ${deployer}`);
   console.log(`Frontend env written: ${frontendEnvPath}`);
   console.log(`Deployment record: ${deploymentPath}`);
-  console.log('');
+  console.log('\nIMPORTANT: Save these addresses! They cannot be changed.');
+  console.log('=========================================\n');
   console.log('Next commands:');
   console.log('  npm --prefix "frontend 3" run build');
   console.log('  npm --prefix "frontend 3" run dev');

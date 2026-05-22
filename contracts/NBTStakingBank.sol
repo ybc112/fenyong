@@ -257,6 +257,10 @@ contract NBTStakingBank {
         added = _syncRewards();
     }
 
+    function syncRewardsPublic() external whenNotPaused returns (uint256 added) {
+        added = _syncRewards();
+    }
+
     function setDepositFee(uint256 depositFee_, address receiver) external onlyOwner {
         require(depositFee_ <= 1_000, "Fee too high");
         require(receiver != address(0), "Invalid address");

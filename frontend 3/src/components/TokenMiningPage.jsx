@@ -47,6 +47,7 @@ export default function TokenMiningPage({
   const [referrerInput, setReferrerInput] = useState('');
   const [isSettingReferrer, setIsSettingReferrer] = useState(false);
   const [isClaimingReferral, setIsClaimingReferral] = useState(false);
+  const [isSyncingRewards, setIsSyncingRewards] = useState(false);
   const [referralPage, setReferralPage] = useState(0);
   const [allReferrals, setAllReferrals] = useState([]);
   const [loadingMoreReferrals, setLoadingMoreReferrals] = useState(false);
@@ -294,6 +295,24 @@ export default function TokenMiningPage({
     }
   };
 
+  // 公开同步奖励池（任何人都可以调用）
+  const handleSyncRewardsPublic = async () => {
+    const stakingContract = contracts?.writeStakingBank;
+    if (!stakingContract) return;
+    setIsSyncingRewards(true);
+    try {
+      const tx = await stakingContract.syncRewardsPublic();
+      toast.loading(t('toast.syncingRewards'), { id: 'syncPublic' });
+      await tx.wait();
+      toast.success(t('toast.syncRewardsSuccess'), { id: 'syncPublic' });
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'syncPublic' });
+    } finally {
+      setIsSyncingRewards(false);
+    }
+  };
+
   // 加载更多推荐列表
   const loadMoreReferrals = async () => {
     const stakingContract = contracts?.stakingBank;
@@ -459,7 +478,7 @@ export default function TokenMiningPage({
           ))}
         </div>
 
-        {/* Progress Bar */}
+        {/* Progress Bar + Sync Rewards */}
         <div className="glass-premium p-5">
           <div className="flex justify-between items-center mb-3">
             <span className="text-white/60 text-sm">{t('tokenMining.rewardProgress')}</span>
@@ -478,6 +497,38 @@ export default function TokenMiningPage({
             <span>0</span>
             <span>{formatNumber(v3TotalRewards)} NBT</span>
           </div>
+
+          {/* 公开同步奖励池按钮 - 任何人都可以点击 */}
+          {stakingData?.pendingSyncRewards && parseFloat(stakingData.pendingSyncRewards) > 0 && (
+            <div className="mt-4 p-4 rounded-xl bg-[#00D9A5]/10 border border-[#00D9A5]/30">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm text-white/70">{t('tokenMining.pendingSyncRewards') || '待同步奖励'}</div>
+                  <div className="text-lg font-bold text-[#00D9A5]">{formatNumber(stakingData.pendingSyncRewards, 4)} NBT</div>
+                  <div className="text-xs text-white/40 mt-1">{t('tokenMining.syncRewardsDesc') || '有人直接转账 NBT 到合约，点击同步即可计入奖励池'}</div>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleSyncRewardsPublic}
+                  disabled={isSyncingRewards}
+                  className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#00D9A5] to-[#00B88A] text-[#0B1120] font-medium hover:opacity-90 transition-opacity disabled:opacity-50 flex items-center gap-2 whitespace-nowrap"
+                >
+                  {isSyncingRewards ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-[#0B1120]/30 border-t-[#0B1120] rounded-full animate-spin" />
+                      {t('tokenMining.syncing') || '同步中...'}
+                    </>
+                  ) : (
+                    <>
+                      <FiRefreshCw className="w-4 h-4" />
+                      {t('tokenMining.syncRewards') || '同步奖励池'}
+                    </>
+                  )}
+                </motion.button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Main Cards: Staking + My Stakes */}

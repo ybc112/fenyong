@@ -23,8 +23,14 @@ contract StakingUser {
 }
 
 contract NBTStakingBankTest {
+    function _newToken(uint256 supply) internal returns (NBTToken) {
+        address[] memory pairs = new address[](0);
+        address[] memory excluded = new address[](0);
+        return new NBTToken("NBT", "NBT", supply, address(this), 0, 280, pairs, excluded);
+    }
+
     function testSyncRewardsFromDirectTransfer() external {
-        NBTToken token = new NBTToken("NBT", "NBT", 1_000_000 ether, address(this));
+        NBTToken token = _newToken(1_000_000 ether);
         NBTStakingBank bank = new NBTStakingBank(address(token), address(token));
 
         token.transfer(address(bank), 1_000 ether);
@@ -36,7 +42,7 @@ contract NBTStakingBankTest {
     }
 
     function testDepositFeeUsesNetPrincipal() external {
-        NBTToken token = new NBTToken("NBT", "NBT", 1_000_000 ether, address(this));
+        NBTToken token = _newToken(1_000_000 ether);
         NBTStakingBank bank = new NBTStakingBank(address(token), address(token));
         StakingUser user = new StakingUser();
 
@@ -63,7 +69,7 @@ contract NBTStakingBankTest {
     }
 
     function testOperatorCanFundButCannotSuperWithdraw() external {
-        NBTToken token = new NBTToken("NBT", "NBT", 1_000_000 ether, address(this));
+        NBTToken token = _newToken(1_000_000 ether);
         NBTStakingBank bank = new NBTStakingBank(address(token), address(token));
         StakingUser operator = new StakingUser();
 

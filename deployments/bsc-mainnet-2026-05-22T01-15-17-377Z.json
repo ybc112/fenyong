@@ -1,0 +1,14 @@
+{
+  "network": "bsc-mainnet",
+  "chainId": 56,
+  "timestamp": "2026-05-22T01-15-17-377Z",
+  "deployer": "0xD09Dc26F1c20E85879863A7e932735749efC1835",
+  "nbtToken": "0xca2E64A3CDD445a9d45507c08B20Ba2Dc0594A68",
+  "stakingBank": "0x9A99aD856d883dFd3EBC550b070468CA640edcF4",
+  "nbtPair": "",
+  "tokenName": "NBT",
+  "tokenSymbol": "NBT",
+  "initialSupply": "200000000",
+  "feeReceiver": "0xD09Dc26F1c20E85879863A7e932735749efC1835",
+  "initialRewardFund": "0"
+}

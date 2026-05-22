@@ -23,14 +23,7 @@ export const NBT_TOKEN_ABI = [
   "function getFeeConfig() view returns (uint256 _buyFee, uint256 _sellFee, address _feeReceiver)",
   "function calculateSellAmount(uint256 amount) view returns (uint256 feeAmount, uint256 receiveAmount)",
   "function calculateBuyAmount(uint256 amount) view returns (uint256 feeAmount, uint256 receiveAmount)",
-  "function setPair(address pair, bool status)",
-  "function setPairsBatch(address[] pairs, bool status)",
-  "function setFees(uint256 _buyFee, uint256 _sellFee)",
-  "function setFeeReceiver(address _feeReceiver)",
-  "function setExcludedFromFee(address account, bool status)",
-  "function setExcludedFromFeeBatch(address[] accounts, bool status)",
   "function burn(uint256 amount)",
-  "function owner() view returns (address)",
 ];
 
 export const STAKING_BANK_ABI = [

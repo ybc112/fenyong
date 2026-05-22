@@ -11,47 +11,51 @@ contract NBTToken {
     mapping(address => mapping(address => uint256)) private _allowances;
 
     uint256 public constant FEE_BASE = 10_000;
-    uint256 public buyFee;
-    uint256 public sellFee;
-    address public feeReceiver;
+    uint256 public immutable buyFee;
+    uint256 public immutable sellFee;
+    address public immutable feeReceiver;
     mapping(address => bool) public isPair;
     mapping(address => bool) public isExcludedFromFee;
 
-    address public owner;
-    address public pendingOwner;
-
     event Transfer(address indexed from, address indexed to, uint256 value);
     event Approval(address indexed owner, address indexed spender, uint256 value);
-    event PairUpdated(address indexed pair, bool status);
-    event FeeReceiverUpdated(address indexed oldReceiver, address indexed newReceiver);
-    event FeesUpdated(uint256 buyFee, uint256 sellFee);
-    event ExcludedFromFee(address indexed account, bool status);
+    event PairSet(address indexed pair);
+    event ExcludedFromFeeSet(address indexed account);
     event FeeCollected(address indexed from, address indexed to, uint256 amount, bool isSell);
-    event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
-    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Ownable: caller is not the owner");
-        _;
-    }
 
     constructor(
         string memory name_,
         string memory symbol_,
         uint256 initialSupply_,
-        address feeReceiver_
+        address feeReceiver_,
+        uint256 buyFee_,
+        uint256 sellFee_,
+        address[] memory initialPairs,
+        address[] memory initialExcludedFromFee
     ) {
         require(feeReceiver_ != address(0), "Invalid address");
+        require(buyFee_ <= 1_000 && sellFee_ <= 1_000, "Fee too high");
+
         _name = name_;
         _symbol = symbol_;
-        owner = msg.sender;
         feeReceiver = feeReceiver_;
-        sellFee = 280;
+        buyFee = buyFee_;
+        sellFee = sellFee_;
 
-        isExcludedFromFee[msg.sender] = true;
-        isExcludedFromFee[feeReceiver_] = true;
+        _setExcluded(msg.sender);
+        _setExcluded(feeReceiver_);
+
+        for (uint256 i = 0; i < initialExcludedFromFee.length; i++) {
+            _setExcluded(initialExcludedFromFee[i]);
+        }
+
+        for (uint256 i = 0; i < initialPairs.length; i++) {
+            require(initialPairs[i] != address(0), "Invalid address");
+            isPair[initialPairs[i]] = true;
+            emit PairSet(initialPairs[i]);
+        }
+
         _mint(msg.sender, initialSupply_);
-        emit OwnershipTransferred(address(0), msg.sender);
     }
 
     function name() external view returns (string memory) {
@@ -116,62 +120,12 @@ contract NBTToken {
         return (buyFee, sellFee, feeReceiver);
     }
 
-    function setPair(address pair, bool status) external onlyOwner {
-        require(pair != address(0), "Invalid address");
-        isPair[pair] = status;
-        emit PairUpdated(pair, status);
-    }
-
-    function setPairsBatch(address[] calldata pairs, bool status) external onlyOwner {
-        for (uint256 i = 0; i < pairs.length; i++) {
-            require(pairs[i] != address(0), "Invalid address");
-            isPair[pairs[i]] = status;
-            emit PairUpdated(pairs[i], status);
-        }
-    }
-
-    function setFees(uint256 buyFee_, uint256 sellFee_) external onlyOwner {
-        require(buyFee_ <= 1_000 && sellFee_ <= 1_000, "Fee too high");
-        buyFee = buyFee_;
-        sellFee = sellFee_;
-        emit FeesUpdated(buyFee_, sellFee_);
-    }
-
-    function setFeeReceiver(address feeReceiver_) external onlyOwner {
-        require(feeReceiver_ != address(0), "Invalid address");
-        address oldReceiver = feeReceiver;
-        feeReceiver = feeReceiver_;
-        isExcludedFromFee[feeReceiver_] = true;
-        emit FeeReceiverUpdated(oldReceiver, feeReceiver_);
-    }
-
-    function setExcludedFromFee(address account, bool status) external onlyOwner {
+    function _setExcluded(address account) internal {
         require(account != address(0), "Invalid address");
-        isExcludedFromFee[account] = status;
-        emit ExcludedFromFee(account, status);
-    }
-
-    function setExcludedFromFeeBatch(address[] calldata accounts, bool status) external onlyOwner {
-        for (uint256 i = 0; i < accounts.length; i++) {
-            require(accounts[i] != address(0), "Invalid address");
-            isExcludedFromFee[accounts[i]] = status;
-            emit ExcludedFromFee(accounts[i], status);
+        if (!isExcludedFromFee[account]) {
+            isExcludedFromFee[account] = true;
+            emit ExcludedFromFeeSet(account);
         }
-    }
-
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "Invalid address");
-        pendingOwner = newOwner;
-        emit OwnershipTransferStarted(owner, newOwner);
-    }
-
-    function acceptOwnership() external {
-        require(msg.sender == pendingOwner, "Ownable: caller is not the new owner");
-        address oldOwner = owner;
-        owner = pendingOwner;
-        pendingOwner = address(0);
-        isExcludedFromFee[owner] = true;
-        emit OwnershipTransferred(oldOwner, owner);
     }
 
     function _transfer(address from, address to, uint256 amount) internal {
