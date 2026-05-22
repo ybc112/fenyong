@@ -749,100 +749,14 @@ export default function AdminPage({
             </div>
           </div>
 
-          <div className="glass-premium p-6">
-            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-              <FiPercent className="w-4 h-4 text-[#FFB800]" />
-              {t('admin.slippageSetting')}
-            </h3>
-            <div className="grid md:grid-cols-2 gap-3 mb-3">
-              <input
-                type="number"
-                step="0.1"
-                placeholder={t('admin.buySlippage')}
-                value={tokenConfig.buyFee}
-                onChange={(e) => setTokenConfig(prev => ({ ...prev, buyFee: e.target.value }))}
-                className="input-premium"
-              />
-              <input
-                type="number"
-                step="0.1"
-                placeholder={t('admin.sellSlippage')}
-                value={tokenConfig.sellFee}
-                onChange={(e) => setTokenConfig(prev => ({ ...prev, sellFee: e.target.value }))}
-                className="input-premium"
-              />
-            </div>
-            <button
-              onClick={handleSetFees}
-              disabled={isUpdating || tokenConfig.buyFee === '' || tokenConfig.sellFee === ''}
-              className="btn-premium w-full disabled:opacity-50"
-            >
-              <FiSave className="w-4 h-4 mr-2" />
-              {t('admin.saveSlippageSetting')}
-            </button>
-          </div>
-
-          <div className="grid lg:grid-cols-3 gap-6">
-            <div className="glass-premium p-6">
-              <h3 className="font-semibold text-white mb-4">{t('admin.pairSetting')}</h3>
-              <input
-                type="text"
-                placeholder="0x..."
-                value={tokenConfig.pairAddress}
-                onChange={(e) => setTokenConfig(prev => ({ ...prev, pairAddress: e.target.value }))}
-                className="input-premium w-full mb-3 font-mono text-sm"
-              />
-              <button
-                onClick={handleSetPair}
-                disabled={isUpdating || !tokenConfig.pairAddress}
-                className="btn-premium w-full disabled:opacity-50"
-              >
-                {t('admin.add')}
-              </button>
-            </div>
-
-            <div className="glass-premium p-6">
-              <h3 className="font-semibold text-white mb-4">{t('admin.feeReceiver')}</h3>
-              <input
-                type="text"
-                placeholder="0x..."
-                value={tokenConfig.feeReceiver}
-                onChange={(e) => setTokenConfig(prev => ({ ...prev, feeReceiver: e.target.value }))}
-                className="input-premium w-full mb-3 font-mono text-sm"
-              />
-              <button
-                onClick={handleSetFeeReceiver}
-                disabled={isUpdating || !tokenConfig.feeReceiver}
-                className="btn-premium w-full disabled:opacity-50"
-              >
-                {t('admin.set')}
-              </button>
-            </div>
-
-            <div className="glass-premium p-6">
-              <h3 className="font-semibold text-white mb-4">{t('admin.whitelist')}</h3>
-              <input
-                type="text"
-                placeholder="0x..."
-                value={tokenConfig.excludeAddress}
-                onChange={(e) => setTokenConfig(prev => ({ ...prev, excludeAddress: e.target.value }))}
-                className="input-premium w-full mb-3 font-mono text-sm"
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  onClick={() => handleSetExcluded(true)}
-                  disabled={isUpdating || !tokenConfig.excludeAddress}
-                  className="btn-premium disabled:opacity-50"
-                >
-                  {t('admin.add')}
-                </button>
-                <button
-                  onClick={() => handleSetExcluded(false)}
-                  disabled={isUpdating || !tokenConfig.excludeAddress}
-                  className="btn-ghost disabled:opacity-50"
-                >
-                  {t('admin.remove')}
-                </button>
+          <div className="p-4 rounded-xl bg-[#FFB800]/10 border border-[#FFB800]/30">
+            <div className="flex items-start gap-3">
+              <FiAlertTriangle className="w-5 h-5 text-[#FFB800] mt-0.5" />
+              <div>
+                <p className="text-[#FFB800] font-medium">{t('admin.warning')}</p>
+                <p className="text-white/50 text-sm mt-1">
+                  NBT Token 的手续费收取地址在部署时通过 `FEE_RECEIVER` 固定设置，部署后不可修改。当前仅展示链上读数，不再提供编辑入口。
+                </p>
               </div>
             </div>
           </div>

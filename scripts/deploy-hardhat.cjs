@@ -25,6 +25,8 @@ async function main() {
   const sellFee = Number(process.env.SELL_FEE || "280");
   const initialRewardFund = process.env.INITIAL_REWARD_FUND || "0";
   const rewardFundWei = hre.ethers.parseEther(initialRewardFund);
+  const depositFee = Number(process.env.DEPOSIT_FEE || "0");
+  const depositFeeReceiverInput = process.env.DEPOSIT_FEE_RECEIVER || "";
 
   // Fee receiver (default to deployer)
   const feeReceiver = process.env.FEE_RECEIVER || deployerAddress;
@@ -40,6 +42,8 @@ async function main() {
   console.log(`Sell Fee: ${sellFee / 100}%`);
   console.log(`Fee Receiver: ${feeReceiver}`);
   console.log(`NBT Pair: ${nbtPair || "(none)"}`);
+  console.log(`Deposit Fee: ${depositFee / 100}%`);
+  console.log(`Deposit Fee Receiver: ${depositFeeReceiverInput || deployerAddress}`);
   console.log(`Initial Reward Fund: ${initialRewardFund}`);
   console.log("=======================================\n");
 
@@ -67,6 +71,16 @@ async function main() {
   await stakingBank.waitForDeployment();
   const stakingBankAddress = await stakingBank.getAddress();
   console.log(`NBTStakingBank deployed: ${stakingBankAddress}`);
+
+  const depositFeeReceiver = depositFeeReceiverInput && hre.ethers.isAddress(depositFeeReceiverInput)
+    ? depositFeeReceiverInput
+    : deployerAddress;
+  if (depositFee > 0 || depositFeeReceiverInput) {
+    console.log("\nConfiguring staking deposit fee...");
+    const feeTx = await stakingBank.setDepositFee(depositFee, depositFeeReceiver);
+    await feeTx.wait();
+    console.log(`Configured deposit fee: ${depositFee / 100}% -> ${depositFeeReceiver}`);
+  }
 
   // Fund initial rewards if specified
   if (rewardFundWei > 0n) {
@@ -107,6 +121,8 @@ async function main() {
     nbtToken: nbtTokenAddress,
     stakingBank: stakingBankAddress,
     nbtPair,
+    depositFee,
+    depositFeeReceiver,
     tokenName,
     tokenSymbol,
     initialSupply,
@@ -157,6 +173,8 @@ async function main() {
   console.log(`Network: ${isMainnet ? "BSC Mainnet" : "BSC Testnet"}`);
   console.log(`NBTToken: ${nbtTokenAddress}`);
   console.log(`StakingBank: ${stakingBankAddress}`);
+  console.log(`DepositFee: ${depositFee / 100}%`);
+  console.log(`DepositFeeReceiver: ${depositFeeReceiver}`);
   console.log(`Deployer: ${deployerAddress}`);
   console.log("=========================================\n");
 }

@@ -82,6 +82,8 @@ async function main() {
   const tokenSymbol = optionalEnv('TOKEN_SYMBOL', 'NBT');
   const initialSupply = optionalEnv('INITIAL_SUPPLY', '200000000');
   const initialRewardFund = optionalEnv('INITIAL_REWARD_FUND', '0');
+  const depositFee = Number(optionalEnv('DEPOSIT_FEE', '0'));
+  const depositFeeReceiverInput = optionalEnv('DEPOSIT_FEE_RECEIVER', '');
   const deploymentsDir = path.resolve(rootDir, optionalEnv('DEPLOYMENTS_DIR', 'deployments'));
   const frontendEnvPath = path.resolve(rootDir, optionalEnv('FRONTEND_ENV_PATH', 'frontend 3/.env'));
 
@@ -134,6 +136,8 @@ async function main() {
   console.log(`Sell Fee: ${sellFee / 100}%`);
   console.log(`Fee Receiver: ${feeReceiver}`);
   console.log(`NBT Pair: ${nbtPair || '(none)'}`);
+  console.log(`Deposit Fee: ${depositFee / 100}%`);
+  console.log(`Deposit Fee Receiver: ${depositFeeReceiverInput || deployer}`);
   console.log(`Initial Reward Fund: ${initialRewardFund}`);
   console.log('=======================================\n');
 
@@ -162,6 +166,15 @@ async function main() {
   const stakingBank = await staking.getAddress();
   console.log(`NBTStakingBank deployed: ${stakingBank}`);
 
+  const depositFeeReceiver =
+    depositFeeReceiverInput && ethers.isAddress(depositFeeReceiverInput)
+      ? depositFeeReceiverInput
+      : deployer;
+  if (depositFee > 0 || depositFeeReceiverInput) {
+    console.log('\nConfiguring staking deposit fee...');
+    await wait(await staking.setDepositFee(depositFee, depositFeeReceiver), 'Set deposit fee');
+  }
+
   const rewardFundWei = ethers.parseEther(initialRewardFund);
   if (rewardFundWei > 0n) {
     console.log('\nFunding initial rewards...');
@@ -180,6 +193,8 @@ async function main() {
     nbtToken,
     stakingBank,
     nbtPair,
+    depositFee,
+    depositFeeReceiver,
     tokenName,
     tokenSymbol,
     initialSupply,
@@ -192,6 +207,8 @@ async function main() {
   console.log(`Network: BSC Mainnet`);
   console.log(`NBTToken: ${nbtToken}`);
   console.log(`StakingBank: ${stakingBank}`);
+  console.log(`DepositFee: ${depositFee / 100}%`);
+  console.log(`DepositFeeReceiver: ${depositFeeReceiver}`);
   console.log(`Deployer: ${deployer}`);
   console.log(`Frontend env written: ${frontendEnvPath}`);
   console.log(`Deployment record: ${deploymentPath}`);
