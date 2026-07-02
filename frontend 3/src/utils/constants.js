@@ -1,7 +1,8 @@
 export const CONTRACTS = {
-  NBT_TOKEN: import.meta.env.VITE_NBT_TOKEN || '',
+  NBT_TOKEN: import.meta.env.VITE_NBT_TOKEN || '0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04',
   STAKING_BANK: import.meta.env.VITE_STAKING_BANK || '',
   NBT_PAIR: import.meta.env.VITE_NBT_PAIR || '',
+  FEE_TOKEN: import.meta.env.VITE_FEE_TOKEN || '0x55d398326f99059fF775485246999027B3197955',
 };
 
 const configuredChainId = (import.meta.env.VITE_CHAIN_ID || '0x38').toLowerCase();
@@ -93,6 +94,10 @@ export const CONTRACT_ERRORS = {
   'Lock period not ended': '锁仓期未结束',
   'No pending rewards': '暂无待领取收益',
   'No referral rewards': '暂无推荐奖励',
+  'No rewards': '暂无可领取奖励',
+  'Monthly release in progress': '月度释放分配中，暂时不能改变排名',
+  'Insufficient invite reward reserve': '邀请奖励储备不足，请联系项目方补充奖励',
+  'Referrer mismatch': '推荐人与已绑定地址不一致',
   'Rewards depleted': '奖励池已耗尽',
   'Too many active stakes': '活跃质押数量已达上限',
   'Stake not active': '该质押记录已失效',

@@ -41,9 +41,9 @@ function optionalEnv(name, fallback = '') {
 }
 
 function artifact(contractFile, contractName) {
-  const artifactPath = path.join(rootDir, 'out', contractFile, `${contractName}.json`);
+  const artifactPath = path.join(rootDir, 'artifacts', 'contracts', contractFile, `${contractName}.json`);
   if (!existsSync(artifactPath)) {
-    throw new Error(`Missing artifact ${artifactPath}. Run forge build first.`);
+    throw new Error(`Missing artifact ${artifactPath}. Run hardhat compile first.`);
   }
   return JSON.parse(readFileSync(artifactPath, 'utf8'));
 }
@@ -54,6 +54,7 @@ function writeFrontendEnv(filePath, values) {
     `VITE_NBT_TOKEN=${values.nbtToken}`,
     `VITE_STAKING_BANK=${values.stakingBank}`,
     `VITE_NBT_PAIR=${values.nbtPair || ''}`,
+    `VITE_FEE_TOKEN=${values.feeToken || values.nbtToken}`,
     '',
   ].join('\n');
   writeFileSync(filePath, envContent);
@@ -82,11 +83,14 @@ async function main() {
   const tokenSymbol = optionalEnv('TOKEN_SYMBOL', 'NBT');
   const initialSupply = optionalEnv('INITIAL_SUPPLY', '200000000');
   const initialRewardFund = optionalEnv('INITIAL_REWARD_FUND', '0');
+  const feeReceiverA = optionalEnv('FEE_RECEIVER_A', '0xfd682CbCb678ce5D273Eb778B946F6a4d8f1e8Ed');
+  const feeReceiverB = optionalEnv('FEE_RECEIVER_B', '0x5A378b61193ac2ce07cE816893C080804504a2f0');
+  const interactionFee = optionalEnv('INTERACTION_FEE', '0.4');
   const deploymentsDir = path.resolve(rootDir, optionalEnv('DEPLOYMENTS_DIR', 'deployments'));
   const frontendEnvPath = path.resolve(rootDir, optionalEnv('FRONTEND_ENV_PATH', 'frontend 3/.env'));
 
-  console.log('Building contracts with forge...');
-  execFileSync('forge', ['build'], { cwd: rootDir, stdio: 'inherit' });
+  console.log('Building contracts with Hardhat...');
+  execFileSync('npx', ['hardhat', 'compile'], { cwd: rootDir, stdio: 'inherit', shell: true });
 
   const provider = new ethers.JsonRpcProvider(rpcUrl);
   const wallet = new ethers.Wallet(privateKey, provider);
@@ -108,7 +112,7 @@ async function main() {
   const tokenArtifact = artifact('NBTToken.sol', 'NBTToken');
   const stakingArtifact = artifact('NBTStakingBank.sol', 'NBTStakingBank');
 
-  const tokenFactory = new ethers.ContractFactory(tokenArtifact.abi, tokenArtifact.bytecode.object, wallet);
+  const tokenFactory = new ethers.ContractFactory(tokenArtifact.abi, tokenArtifact.bytecode, wallet);
   const initialSupplyWei = ethers.parseEther(initialSupply);
   const buyFee = Number(optionalEnv('BUY_FEE', '0'));
   const sellFee = Number(optionalEnv('SELL_FEE', '280'));
@@ -137,19 +141,25 @@ async function main() {
   console.log(`  initial pairs: ${initialPairs.length ? initialPairs.join(', ') : '(none)'}`);
   console.log('  Token has NO owner — all fee/pair settings are immutable.');
 
-  const stakingFactory = new ethers.ContractFactory(stakingArtifact.abi, stakingArtifact.bytecode.object, wallet);
-  const staking = await stakingFactory.deploy(nbtToken, nbtToken);
+  const stakingFactory = new ethers.ContractFactory(stakingArtifact.abi, stakingArtifact.bytecode, wallet);
+  const staking = await stakingFactory.deploy(
+    nbtToken,
+    nbtToken,
+    nbtToken,
+    feeReceiverA,
+    feeReceiverB,
+    ethers.parseEther(interactionFee),
+  );
   await staking.waitForDeployment();
   const stakingBank = await staking.getAddress();
   console.log(`NBTStakingBank deployed: ${stakingBank}`);
 
   const rewardFundWei = ethers.parseEther(initialRewardFund);
   if (rewardFundWei > 0n) {
-    await wait(await token.approve(stakingBank, rewardFundWei), 'Approve initial rewards');
-    await wait(await staking.fundRewards(rewardFundWei), 'Fund initial rewards');
+    await wait(await token.transfer(stakingBank, rewardFundWei), 'Transfer initial rewards');
   }
 
-  writeFrontendEnv(frontendEnvPath, { nbtToken, stakingBank, nbtPair });
+  writeFrontendEnv(frontendEnvPath, { nbtToken, stakingBank, nbtPair, feeToken: nbtToken });
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const deploymentPath = writeDeploymentJson(deploymentsDir, {
@@ -160,6 +170,10 @@ async function main() {
     nbtToken,
     stakingBank,
     nbtPair,
+    feeToken: nbtToken,
+    interactionFee,
+    feeReceiverA,
+    feeReceiverB,
     tokenName,
     tokenSymbol,
     initialSupply,

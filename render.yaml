@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: crypto-zenith
+    runtime: static
+    rootDir: frontend 3
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_CHAIN_ID
+        value: 0x61
+      - key: VITE_NBT_TOKEN
+        value: 0x26326032Ce9198311DD0E659965E496f035fAc23
+      - key: VITE_STAKING_BANK
+        value: 0xd09cB15301f590Bc66993f4915d7386ac65fAfB9
+      - key: VITE_NBT_PAIR
+        value: ""
+      - key: VITE_FEE_TOKEN
+        value: 0x26326032Ce9198311DD0E659965E496f035fAc23

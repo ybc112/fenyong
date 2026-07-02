@@ -41,9 +41,9 @@ function optionalEnv(name, fallback = '') {
 }
 
 function artifact(contractFile, contractName) {
-  const artifactPath = path.join(rootDir, 'out', contractFile, `${contractName}.json`);
+  const artifactPath = path.join(rootDir, 'artifacts', 'contracts', contractFile, `${contractName}.json`);
   if (!existsSync(artifactPath)) {
-    throw new Error(`Missing artifact ${artifactPath}. Run forge build first.`);
+    throw new Error(`Missing artifact ${artifactPath}. Run hardhat compile first.`);
   }
   return JSON.parse(readFileSync(artifactPath, 'utf8'));
 }
@@ -54,6 +54,7 @@ function writeFrontendEnv(filePath, values) {
     `VITE_NBT_TOKEN=${values.nbtToken}`,
     `VITE_STAKING_BANK=${values.stakingBank}`,
     `VITE_NBT_PAIR=${values.nbtPair || ''}`,
+    `VITE_FEE_TOKEN=${values.feeToken || ''}`,
     '',
   ].join('\n');
   writeFileSync(filePath, envContent);
@@ -73,58 +74,27 @@ async function wait(tx, label) {
   return receipt;
 }
 
-function parseRpcUrls() {
-  const raw = optionalEnv('BSC_MAINNET_RPC_URLS', '');
-  const urls = raw
-    .split(',')
-    .map((item) => item.trim())
-    .filter(Boolean);
-
-  if (urls.length > 0) return urls;
-
-  return [
-    optionalEnv('BSC_MAINNET_RPC_URL', 'https://bsc-dataseed.binance.org/'),
-    'https://bsc-dataseed1.binance.org/',
-    'https://bsc-dataseed2.binance.org/',
-    'https://bsc.publicnode.com',
-    'https://bsc.blockpi.network/v1/rpc/public',
-  ];
-}
-
-async function createProvider() {
-  const rpcUrls = parseRpcUrls();
-  const errors = [];
-
-  for (const rpcUrl of rpcUrls) {
-    try {
-      const provider = new ethers.JsonRpcProvider(rpcUrl);
-      await provider.getNetwork();
-      return { provider, rpcUrl };
-    } catch (error) {
-      errors.push(`${rpcUrl}: ${error.message}`);
-    }
-  }
-
-  throw new Error(`Unable to connect to any BSC mainnet RPC.\n${errors.join('\n')}`);
-}
-
 async function main() {
   loadDotenv(path.join(rootDir, '.env.mainnet'));
 
+  const rpcUrl = optionalEnv('BSC_MAINNET_RPC_URL', 'https://bsc-dataseed.binance.org/');
   const privateKey = requireEnv('PRIVATE_KEY');
   const tokenName = optionalEnv('TOKEN_NAME', 'NBT');
   const tokenSymbol = optionalEnv('TOKEN_SYMBOL', 'NBT');
   const initialSupply = optionalEnv('INITIAL_SUPPLY', '200000000');
   const initialRewardFund = optionalEnv('INITIAL_REWARD_FUND', '0');
-  const depositFee = Number(optionalEnv('DEPOSIT_FEE', '0'));
-  const depositFeeReceiverInput = optionalEnv('DEPOSIT_FEE_RECEIVER', '');
+  const existingTokenAddress = optionalEnv('CZ_TOKEN_ADDRESS', '0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04');
+  const feeTokenAddress = optionalEnv('FEE_TOKEN', '0x55d398326f99059fF775485246999027B3197955');
+  const feeReceiverA = optionalEnv('FEE_RECEIVER_A', '0xfd682CbCb678ce5D273Eb778B946F6a4d8f1e8Ed');
+  const feeReceiverB = optionalEnv('FEE_RECEIVER_B', '0x5A378b61193ac2ce07cE816893C080804504a2f0');
+  const interactionFee = optionalEnv('INTERACTION_FEE', '0.4');
   const deploymentsDir = path.resolve(rootDir, optionalEnv('DEPLOYMENTS_DIR', 'deployments'));
   const frontendEnvPath = path.resolve(rootDir, optionalEnv('FRONTEND_ENV_PATH', 'frontend 3/.env'));
 
-  console.log('Building contracts with forge...');
-  execFileSync('forge', ['build'], { cwd: rootDir, stdio: 'inherit' });
+  console.log('Building contracts with Hardhat...');
+  execFileSync('npx', ['hardhat', 'compile'], { cwd: rootDir, stdio: 'inherit', shell: true });
 
-  const { provider, rpcUrl } = await createProvider();
+  const provider = new ethers.JsonRpcProvider(rpcUrl);
   const wallet = new ethers.Wallet(privateKey, provider);
   const network = await provider.getNetwork();
   if (Number(network.chainId) !== 56) {
@@ -140,84 +110,48 @@ async function main() {
   const balance = await provider.getBalance(deployer);
   console.log(`Deployer: ${deployer}`);
   console.log(`BNB balance: ${ethers.formatEther(balance)}`);
-  console.log(`RPC URL: ${rpcUrl}`);
 
   if (balance < ethers.parseEther('0.01')) {
     console.warn('WARNING: BNB balance is very low. Deployment may fail due to insufficient gas.');
   }
 
-  const tokenArtifact = artifact('NBTToken.sol', 'NBTToken');
   const stakingArtifact = artifact('NBTStakingBank.sol', 'NBTStakingBank');
-
-  const tokenFactory = new ethers.ContractFactory(tokenArtifact.abi, tokenArtifact.bytecode.object, wallet);
-  const initialSupplyWei = ethers.parseEther(initialSupply);
-  const buyFee = Number(optionalEnv('BUY_FEE', '0'));
-  const sellFee = Number(optionalEnv('SELL_FEE', '280'));
-  if (!Number.isInteger(buyFee) || buyFee < 0 || buyFee > 1000) {
-    throw new Error(`Invalid BUY_FEE ${buyFee}, must be integer 0-1000`);
-  }
-  if (!Number.isInteger(sellFee) || sellFee < 0 || sellFee > 1000) {
-    throw new Error(`Invalid SELL_FEE ${sellFee}, must be integer 0-1000`);
-  }
-  const initialPairs = nbtPair ? [nbtPair] : [];
-  const initialExcluded = [];
+  const token = new ethers.Contract(existingTokenAddress, [
+    'function transfer(address to, uint256 amount) returns (bool)',
+  ], wallet);
 
   console.log('\n========== DEPLOYMENT CONFIG ==========');
   console.log(`Network: BSC Mainnet (Chain ID: 56)`);
-  console.log(`Token Name: ${tokenName}`);
-  console.log(`Token Symbol: ${tokenSymbol}`);
-  console.log(`Initial Supply: ${initialSupply}`);
-  console.log(`Buy Fee: ${buyFee / 100}%`);
-  console.log(`Sell Fee: ${sellFee / 100}%`);
-  console.log(`Fee Receiver: ${feeReceiver}`);
+  console.log(`CZ Token: ${existingTokenAddress}`);
   console.log(`NBT Pair: ${nbtPair || '(none)'}`);
-  console.log(`Deposit Fee: ${depositFee / 100}%`);
-  console.log(`Deposit Fee Receiver: ${depositFeeReceiverInput || deployer}`);
+  console.log(`Fee Token: ${feeTokenAddress}`);
+  console.log(`Interaction Fee: ${interactionFee} U`);
+  console.log(`Fee Receiver A: ${feeReceiverA}`);
+  console.log(`Fee Receiver B: ${feeReceiverB}`);
   console.log(`Initial Reward Fund: ${initialRewardFund}`);
   console.log('=======================================\n');
 
-  console.log('Deploying NBTToken...');
-  const token = await tokenFactory.deploy(
-    tokenName,
-    tokenSymbol,
-    initialSupplyWei,
-    feeReceiver,
-    buyFee,
-    sellFee,
-    initialPairs,
-    initialExcluded,
-  );
-  await token.waitForDeployment();
-  const nbtToken = await token.getAddress();
-  console.log(`NBTToken deployed: ${nbtToken}`);
-  console.log(`  buyFee=${buyFee} sellFee=${sellFee} feeReceiver=${feeReceiver}`);
-  console.log(`  initial pairs: ${initialPairs.length ? initialPairs.join(', ') : '(none)'}`);
-  console.log('  Token has NO owner — all fee/pair settings are immutable.');
-
   console.log('\nDeploying NBTStakingBank...');
-  const stakingFactory = new ethers.ContractFactory(stakingArtifact.abi, stakingArtifact.bytecode.object, wallet);
-  const staking = await stakingFactory.deploy(nbtToken, nbtToken);
+  const stakingFactory = new ethers.ContractFactory(stakingArtifact.abi, stakingArtifact.bytecode, wallet);
+  const staking = await stakingFactory.deploy(
+    existingTokenAddress,
+    existingTokenAddress,
+    feeTokenAddress,
+    feeReceiverA,
+    feeReceiverB,
+    ethers.parseEther(interactionFee),
+  );
   await staking.waitForDeployment();
   const stakingBank = await staking.getAddress();
   console.log(`NBTStakingBank deployed: ${stakingBank}`);
 
-  const depositFeeReceiver =
-    depositFeeReceiverInput && ethers.isAddress(depositFeeReceiverInput)
-      ? depositFeeReceiverInput
-      : deployer;
-  if (depositFee > 0 || depositFeeReceiverInput) {
-    console.log('\nConfiguring staking deposit fee...');
-    await wait(await staking.setDepositFee(depositFee, depositFeeReceiver), 'Set deposit fee');
-  }
-
   const rewardFundWei = ethers.parseEther(initialRewardFund);
   if (rewardFundWei > 0n) {
-    console.log('\nFunding initial rewards...');
-    await wait(await token.approve(stakingBank, rewardFundWei), 'Approve initial rewards');
-    await wait(await staking.fundRewards(rewardFundWei), 'Fund initial rewards');
+    console.log('\nTransferring initial invite reward reserve...');
+    await wait(await token.transfer(stakingBank, rewardFundWei), 'Transfer initial rewards');
   }
 
-  writeFrontendEnv(frontendEnvPath, { nbtToken, stakingBank, nbtPair });
+  writeFrontendEnv(frontendEnvPath, { nbtToken: existingTokenAddress, stakingBank, nbtPair, feeToken: feeTokenAddress });
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const deploymentPath = writeDeploymentJson(deploymentsDir, {
@@ -225,25 +159,24 @@ async function main() {
     chainId: Number(network.chainId),
     timestamp,
     deployer,
-    nbtToken,
+    nbtToken: existingTokenAddress,
     stakingBank,
     nbtPair,
-    depositFee,
-    depositFeeReceiver,
+    feeToken: feeTokenAddress,
+    interactionFee,
+    feeReceiverA,
+    feeReceiverB,
     tokenName,
     tokenSymbol,
     initialSupply,
-    feeReceiver,
     initialRewardFund,
     frontendEnvPath,
   });
 
   console.log('\n========== DEPLOYMENT COMPLETE ==========');
   console.log(`Network: BSC Mainnet`);
-  console.log(`NBTToken: ${nbtToken}`);
+  console.log(`CZToken: ${existingTokenAddress}`);
   console.log(`StakingBank: ${stakingBank}`);
-  console.log(`DepositFee: ${depositFee / 100}%`);
-  console.log(`DepositFeeReceiver: ${depositFeeReceiver}`);
   console.log(`Deployer: ${deployer}`);
   console.log(`Frontend env written: ${frontendEnvPath}`);
   console.log(`Deployment record: ${deploymentPath}`);

@@ -6,8 +6,8 @@ const translations = {
     // Header
     header: {
       home: "首页",
-      tokenMining: "存币生息",
-      referral: "推荐奖励",
+      tokenMining: "节点排名",
+      referral: "邀请节点",
       admin: "管理",
       switchNetwork: "切换网络",
       connecting: "连接中...",
@@ -351,7 +351,7 @@ const translations = {
     // Footer
     footer: {
       builtOn: "Built on BSC.",
-      tokenMiningContract: "Token Mining Contract",
+      tokenMiningContract: "CZ Node Contract",
     },
     // Toast messages
     toast: {
@@ -428,8 +428,8 @@ const translations = {
     // Header
     header: {
       home: "Home",
-      tokenMining: "Token Mining",
-      referral: "Referral",
+      tokenMining: "Node Rank",
+      referral: "Invite Nodes",
       admin: "Admin",
       switchNetwork: "Switch Network",
       connecting: "Connecting...",
@@ -790,7 +790,7 @@ const translations = {
     // Footer
     footer: {
       builtOn: "Built on BSC.",
-      tokenMiningContract: "Token Mining Contract",
+      tokenMiningContract: "CZ Node Contract",
     },
     // Toast messages
     toast: {

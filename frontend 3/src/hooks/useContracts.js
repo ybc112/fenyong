@@ -17,8 +17,10 @@ const retryCall = async (fn, retries = 3, delay = 1000) => {
 export function useContracts(signer, provider) {
   const [contracts, setContracts] = useState({
     nbtToken: null,
+    feeToken: null,
     stakingBank: null,
     writeNbtToken: null,
+    writeFeeToken: null,
     writeStakingBank: null,
   });
 
@@ -31,17 +33,25 @@ export function useContracts(signer, provider) {
     const stakingBank = CONTRACTS.STAKING_BANK
       ? new ethers.Contract(CONTRACTS.STAKING_BANK, STAKING_BANK_ABI, provider)
       : null;
+    const feeToken = CONTRACTS.FEE_TOKEN
+      ? new ethers.Contract(CONTRACTS.FEE_TOKEN, ERC20_ABI, provider)
+      : null;
     const writeNbtToken = CONTRACTS.NBT_TOKEN && signer
       ? new ethers.Contract(CONTRACTS.NBT_TOKEN, NBT_TOKEN_ABI, signer)
       : null;
     const writeStakingBank = CONTRACTS.STAKING_BANK && signer
       ? new ethers.Contract(CONTRACTS.STAKING_BANK, STAKING_BANK_ABI, signer)
       : null;
+    const writeFeeToken = CONTRACTS.FEE_TOKEN && signer
+      ? new ethers.Contract(CONTRACTS.FEE_TOKEN, ERC20_ABI, signer)
+      : null;
 
     setContracts({
       nbtToken,
+      feeToken,
       stakingBank,
       writeNbtToken,
+      writeFeeToken,
       writeStakingBank,
     });
   }, [signer, provider]);
@@ -54,14 +64,13 @@ export function useStakingBank(contract, account) {
     userInfo: null,
     stakes: [],
     miningStatus: null,
-    tierConfigs: null,
     pendingRewardAll: '0',
-    referralRates: [],
-    referralLevels: 0,
     referrals: [],
     referralsTotal: 0,
-    pendingSyncRewards: '0',
-    depositFeeConfig: null,
+    rankedNodes: [],
+    rankedNodesTotal: 0,
+    currentRelease: null,
+    interactionFeeConfig: null,
     isPaused: false,
     loading: true,
   });
@@ -75,23 +84,17 @@ export function useStakingBank(contract, account) {
     try {
       const [
         miningStatus,
-        tierConfigs,
-        referralRates,
-        referralLevels,
         isPaused,
-        pendingSyncRewards,
-        depositFeeConfig,
+        currentRelease,
+        interactionFeeConfig,
+        rankedData,
       ] = await retryCall(() =>
         Promise.all([
           contract.getMiningStatus(),
-          contract.getAllTierConfigs(),
-          contract.getReferralRates().catch(() => []),
-          contract.getReferralLevels().catch(() => 0),
           contract.paused ? contract.paused().catch(() => false) : Promise.resolve(false),
-          contract.pendingSyncRewards ? contract.pendingSyncRewards().catch(() => 0n) : Promise.resolve(0n),
-          contract.getDepositFeeConfig
-            ? contract.getDepositFeeConfig().catch(() => ({ _depositFee: 0n, _depositFeeReceiver: ethers.ZeroAddress }))
-            : Promise.resolve({ _depositFee: 0n, _depositFeeReceiver: ethers.ZeroAddress }),
+          contract.getCurrentRelease().catch(() => null),
+          contract.getInteractionFeeConfig().catch(() => null),
+          contract.getRankedNodes(0, 100).catch(() => ({ nodes: [], scores: [], total: 0n })),
         ])
       );
 
@@ -110,9 +113,7 @@ export function useStakingBank(contract, account) {
           stakes = userStakes.stakeIds.map((id, index) => ({
             stakeId: Number(id),
             amount: ethers.formatEther(userStakes.amounts[index]),
-            unlockTime: Number(userStakes.unlockTimes[index]),
-            tier: Number(userStakes.tiers[index]),
-            pendingReward: ethers.formatEther(userStakes.pendingRewards[index]),
+            startTime: Number(userStakes.startTimes[index]),
             active: userStakes.actives[index],
           })).filter(stake => stake.active);
         } catch {
@@ -129,42 +130,59 @@ export function useStakingBank(contract, account) {
         }
       }
 
+      const info = userInfo?.info || userInfo?.[0];
+      const rankedNodes = Array.from(rankedData.nodes || rankedData[0] || []).map((node, index) => ({
+        address: node,
+        score: ethers.formatEther((rankedData.scores || rankedData[1])[index]),
+        rank: index + 1,
+      }));
+      const rankedNodesTotal = Number(rankedData.total || rankedData[2] || 0);
+
       setData({
-        userInfo: userInfo ? {
-          totalStaked: ethers.formatEther(userInfo._totalStaked),
-          totalClaimed: ethers.formatEther(userInfo._totalClaimed),
-          stakeCount: Number(userInfo._stakeCount),
-          pendingRewards: ethers.formatEther(userInfo._pendingRewards),
-          activeStakeCount: Number(userInfo._activeStakeCount || 0),
-          referrer: userInfo._referrer,
-          directReferrals: Number(userInfo._directReferrals),
-          referralRewards: ethers.formatEther(userInfo._referralRewards),
-          totalReferralClaimed: ethers.formatEther(userInfo._totalReferralClaimed),
+        userInfo: info ? {
+          totalStaked: ethers.formatEther(info.totalStaked ?? info[0]),
+          totalWithdrawn: ethers.formatEther(info.totalWithdrawn ?? info[1]),
+          stakeCount: Number(info.stakeCount ?? info[2]),
+          activeStakeCount: Number(info.activeStakeCount ?? info[3]),
+          referrer: info.referrer ?? info[4],
+          directReferrals: Number(info.directReferrals ?? info[5]),
+          referralStakeVolume: ethers.formatEther(info.referralStakeVolume ?? info[6]),
+          pendingInviteRewards: ethers.formatEther(info.pendingInviteRewards ?? info[7]),
+          totalInviteClaimed: ethers.formatEther(info.totalInviteClaimed ?? info[8]),
+          pendingRankRewards: ethers.formatEther(info.pendingRankRewards ?? info[9]),
+          totalRankClaimed: ethers.formatEther(info.totalRankClaimed ?? info[10]),
+          pendingRewards: ethers.formatEther(userInfo.pendingRewards ?? userInfo[1]),
+          totalClaimed: ethers.formatEther(userInfo.totalClaimed ?? userInfo[2]),
+          rank: Number(userInfo.rank ?? userInfo[3]),
         } : null,
         stakes,
         miningStatus: {
           totalStaked: ethers.formatEther(miningStatus._totalStaked),
           totalDistributed: ethers.formatEther(miningStatus._totalDistributed),
-          remainingRewards: ethers.formatEther(miningStatus._remainingRewards),
-          miningEnded: miningStatus._miningEnded,
+          claimableRewards: ethers.formatEther(miningStatus._claimableRewards),
+          releaseInProgress: miningStatus._releaseInProgress,
           startTime: Number(miningStatus._startTime),
-          totalReferralDistributed: ethers.formatEther(miningStatus._totalReferralDistributed),
-        },
-        tierConfigs: {
-          durations: tierConfigs.durations.map(duration => Number(duration) / 86400),
-          dailyRates: tierConfigs.dailyRates.map(rate => Number(rate) / 100),
-          annualAPYs: tierConfigs.annualAPYs.map(apy => Number(apy) / 100),
+          rankedNodeCount: Number(miningStatus._rankedNodeCount),
         },
         pendingRewardAll: ethers.formatEther(pendingRewardAll),
-        referralRates: Array.from(referralRates).map(rate => Number(rate) / 100),
-        referralLevels: Number(referralLevels),
         referrals,
         referralsTotal,
-        pendingSyncRewards: ethers.formatEther(pendingSyncRewards),
-        depositFeeConfig: {
-          depositFee: Number(depositFeeConfig._depositFee || 0) / 100,
-          depositFeeReceiver: depositFeeConfig._depositFeeReceiver || ethers.ZeroAddress,
-        },
+        rankedNodes,
+        rankedNodesTotal,
+        currentRelease: currentRelease ? {
+          epochId: Number(currentRelease.epochId ?? currentRelease[0]),
+          amount: ethers.formatEther(currentRelease.amount ?? currentRelease[1]),
+          totalNodes: Number(currentRelease.totalNodes ?? currentRelease[2]),
+          nextRank: Number(currentRelease.nextRank ?? currentRelease[3]),
+          allocatedAmount: ethers.formatEther(currentRelease.allocatedAmount ?? currentRelease[4]),
+          finalized: currentRelease.finalized ?? currentRelease[5],
+        } : null,
+        interactionFeeConfig: interactionFeeConfig ? {
+          feeToken: interactionFeeConfig.feeToken ?? interactionFeeConfig[0],
+          fee: ethers.formatEther(interactionFeeConfig.fee ?? interactionFeeConfig[1]),
+          receiverA: interactionFeeConfig.receiverA ?? interactionFeeConfig[2],
+          receiverB: interactionFeeConfig.receiverB ?? interactionFeeConfig[3],
+        } : null,
         isPaused,
         loading: false,
       });

@@ -4,21 +4,17 @@ pragma solidity ^0.8.20;
 import "../contracts/NBTToken.sol";
 import "../contracts/NBTStakingBank.sol";
 
-contract StakingUser {
+contract NodeUser {
     function approve(NBTToken token, address spender, uint256 amount) external {
         token.approve(spender, amount);
     }
 
-    function deposit(NBTStakingBank bank, uint256 amount, uint8 tier) external {
-        bank.deposit(amount, tier);
+    function stake(NBTStakingBank bank, uint256 amount, address referrer) external {
+        bank.stake(amount, referrer);
     }
 
-    function fundRewards(NBTStakingBank bank, uint256 amount) external {
-        bank.fundRewards(amount);
-    }
-
-    function adminWithdrawToken(NBTStakingBank bank, address token, address to, uint256 amount) external {
-        bank.adminWithdrawToken(token, to, amount);
+    function claim(NBTStakingBank bank) external {
+        bank.claimNodeRewards();
     }
 }
 
@@ -26,63 +22,79 @@ contract NBTStakingBankTest {
     function _newToken(uint256 supply) internal returns (NBTToken) {
         address[] memory pairs = new address[](0);
         address[] memory excluded = new address[](0);
-        return new NBTToken("NBT", "NBT", supply, address(this), 0, 280, pairs, excluded);
+        return new NBTToken("CZ", "CZ", supply, address(this), 0, 0, pairs, excluded);
     }
 
-    function testSyncRewardsFromDirectTransfer() external {
-        NBTToken token = _newToken(1_000_000 ether);
-        NBTStakingBank bank = new NBTStakingBank(address(token), address(token));
-
-        token.transfer(address(bank), 1_000 ether);
-        require(bank.pendingSyncRewards() == 1_000 ether, "pending sync mismatch");
-
-        bank.syncRewards();
-        (, , uint256 remainingRewards, , , ) = bank.getMiningStatus();
-        require(remainingRewards == 1_000 ether, "remaining rewards mismatch");
+    function _newBank(NBTToken token) internal returns (NBTStakingBank) {
+        return new NBTStakingBank(
+            address(token),
+            address(token),
+            address(token),
+            address(0xA),
+            address(0xB),
+            0.4 ether
+        );
     }
 
-    function testDepositFeeUsesNetPrincipal() external {
+    function testReferralStakeCreatesRankAndInviteReward() external {
         NBTToken token = _newToken(1_000_000 ether);
-        NBTStakingBank bank = new NBTStakingBank(address(token), address(token));
-        StakingUser user = new StakingUser();
+        NBTStakingBank bank = _newBank(token);
+        NodeUser staker = new NodeUser();
+        NodeUser inviter = new NodeUser();
 
-        bank.setDepositFee(200, address(this));
-        token.transfer(address(user), 100 ether);
-        user.approve(token, address(bank), 100 ether);
+        token.transfer(address(bank), 10 ether);
+        token.transfer(address(staker), 100.4 ether);
+        staker.approve(token, address(bank), 100.4 ether);
+        staker.stake(bank, 100 ether, address(inviter));
 
-        uint256 feeReceiverBefore = token.balanceOf(address(this));
-        user.deposit(bank, 100 ether, 0);
-        uint256 feeReceiverAfter = token.balanceOf(address(this));
+        require(bank.getNodeRank(address(inviter)) == 1, "rank mismatch");
 
         (
-            uint256 amount,
-            ,
-            ,
-            ,
-            bool active
-        ) = bank.getStakeRecord(address(user), 0);
+            NBTStakingBank.UserInfo memory info,
+            uint256 pendingRewards,
+            uint256 totalClaimed,
+            uint256 rank
+        ) = bank.getUserInfo(address(inviter));
 
-        require(active, "stake inactive");
-        require(amount == 98 ether, "net principal mismatch");
-        require(feeReceiverAfter - feeReceiverBefore == 2 ether, "fee mismatch");
-        require(bank.totalStaked() == 98 ether, "total staked mismatch");
+        require(rank == 1, "getter rank mismatch");
+        require(totalClaimed == 0, "claimed mismatch");
+        require(info.directReferrals == 1, "direct referrals mismatch");
+        require(info.referralStakeVolume == 100 ether, "score mismatch");
+        require(info.pendingInviteRewards == 1 ether, "invite reward mismatch");
+        require(pendingRewards == 1 ether, "pending mismatch");
     }
 
-    function testOperatorCanFundButCannotSuperWithdraw() external {
+    function testMonthlyReleaseAllocatesAllToOnlyRankedNode() external {
         NBTToken token = _newToken(1_000_000 ether);
-        NBTStakingBank bank = new NBTStakingBank(address(token), address(token));
-        StakingUser operator = new StakingUser();
+        NBTStakingBank bank = _newBank(token);
+        NodeUser staker = new NodeUser();
+        NodeUser inviter = new NodeUser();
 
-        bank.setOperator(address(operator), true);
-        token.transfer(address(operator), 1_000 ether);
-        operator.approve(token, address(bank), 1_000 ether);
-        operator.fundRewards(bank, 1_000 ether);
+        token.transfer(address(bank), 10 ether);
+        token.transfer(address(staker), 100.4 ether);
+        staker.approve(token, address(bank), 100.4 ether);
+        staker.stake(bank, 100 ether, address(inviter));
 
-        (, , uint256 remainingRewards, , , ) = bank.getMiningStatus();
-        require(remainingRewards == 1_000 ether, "operator fund mismatch");
+        token.approve(address(bank), 100 ether);
+        bank.openMonthlyRelease(100 ether);
+        bank.allocateMonthlyRelease(10);
 
-        try operator.adminWithdrawToken(bank, address(token), address(operator), 1 ether) {
-            revert("operator withdrew");
-        } catch {}
+        (
+            NBTStakingBank.UserInfo memory info,
+            uint256 pendingRewards,
+            uint256 totalClaimed,
+            uint256 rank
+        ) = bank.getUserInfo(address(inviter));
+
+        require(rank == 1, "rank mismatch");
+        require(totalClaimed == 0, "claimed mismatch");
+        require(info.pendingRankRewards == 100 ether, "rank reward mismatch");
+        require(pendingRewards == 101 ether, "total pending mismatch");
+        require(bank.totalRankDistributed() == 100 ether, "distributed mismatch");
+
+        token.transfer(address(inviter), 0.4 ether);
+        inviter.approve(token, address(bank), 0.4 ether);
+        inviter.claim(bank);
+        require(token.balanceOf(address(inviter)) == 101 ether, "claim mismatch");
     }
 }

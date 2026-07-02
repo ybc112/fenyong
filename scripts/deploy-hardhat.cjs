@@ -17,6 +17,11 @@ async function main() {
   console.log(`Balance: ${hre.ethers.formatEther(balance)} BNB`);
 
   // Token parameters
+  const defaultCzToken = "0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04";
+  const defaultBscUsdt = "0x55d398326f99059fF775485246999027B3197955";
+  const defaultFeeReceiverA = "0xfd682CbCb678ce5D273Eb778B946F6a4d8f1e8Ed";
+  const defaultFeeReceiverB = "0x5A378b61193ac2ce07cE816893C080804504a2f0";
+  const existingTokenAddress = process.env.CZ_TOKEN_ADDRESS || process.env.NBT_TOKEN_ADDRESS || (isMainnet ? defaultCzToken : "");
   const tokenName = process.env.TOKEN_NAME || "NBT";
   const tokenSymbol = process.env.TOKEN_SYMBOL || "NBT";
   const initialSupply = process.env.INITIAL_SUPPLY || "200000000";
@@ -25,8 +30,10 @@ async function main() {
   const sellFee = Number(process.env.SELL_FEE || "280");
   const initialRewardFund = process.env.INITIAL_REWARD_FUND || "0";
   const rewardFundWei = hre.ethers.parseEther(initialRewardFund);
-  const depositFee = Number(process.env.DEPOSIT_FEE || "0");
-  const depositFeeReceiverInput = process.env.DEPOSIT_FEE_RECEIVER || "";
+  const interactionFee = hre.ethers.parseEther(process.env.INTERACTION_FEE || "0.4");
+  const feeTokenAddress = process.env.FEE_TOKEN || (isMainnet ? defaultBscUsdt : "");
+  const feeReceiverA = process.env.FEE_RECEIVER_A || defaultFeeReceiverA;
+  const feeReceiverB = process.env.FEE_RECEIVER_B || defaultFeeReceiverB;
 
   // Fee receiver (default to deployer)
   const feeReceiver = process.env.FEE_RECEIVER || deployerAddress;
@@ -42,56 +49,60 @@ async function main() {
   console.log(`Sell Fee: ${sellFee / 100}%`);
   console.log(`Fee Receiver: ${feeReceiver}`);
   console.log(`NBT Pair: ${nbtPair || "(none)"}`);
-  console.log(`Deposit Fee: ${depositFee / 100}%`);
-  console.log(`Deposit Fee Receiver: ${depositFeeReceiverInput || deployerAddress}`);
+  console.log(`CZ Token: ${existingTokenAddress || "(deploy new token)"}`);
+  console.log(`Fee Token: ${feeTokenAddress || "(new token on local/test)"}`);
+  console.log(`Interaction Fee: ${hre.ethers.formatEther(interactionFee)} U`);
+  console.log(`Fee Receiver A: ${feeReceiverA}`);
+  console.log(`Fee Receiver B: ${feeReceiverB}`);
   console.log(`Initial Reward Fund: ${initialRewardFund}`);
   console.log("=======================================\n");
 
-  // Deploy NBTToken
-  console.log("Deploying NBTToken...");
-  const NBTToken = await hre.ethers.getContractFactory("NBTToken");
-  const token = await NBTToken.deploy(
-    tokenName,
-    tokenSymbol,
-    initialSupplyWei,
-    feeReceiver,
-    buyFee,
-    sellFee,
-    initialPairs,
-    initialExcluded
-  );
-  await token.waitForDeployment();
-  const nbtTokenAddress = await token.getAddress();
-  console.log(`NBTToken deployed: ${nbtTokenAddress}`);
+  let token;
+  let nbtTokenAddress = existingTokenAddress;
+  if (nbtTokenAddress) {
+    token = await hre.ethers.getContractAt("IERC20", nbtTokenAddress);
+    console.log(`Using existing CZ token: ${nbtTokenAddress}`);
+  } else {
+    console.log("Deploying local/test token...");
+    const NBTToken = await hre.ethers.getContractFactory("NBTToken");
+    token = await NBTToken.deploy(
+      tokenName,
+      tokenSymbol,
+      initialSupplyWei,
+      feeReceiver,
+      buyFee,
+      sellFee,
+      initialPairs,
+      initialExcluded
+    );
+    await token.waitForDeployment();
+    nbtTokenAddress = await token.getAddress();
+    console.log(`Local/test token deployed: ${nbtTokenAddress}`);
+  }
+
+  const resolvedFeeToken = feeTokenAddress || nbtTokenAddress;
 
   // Deploy NBTStakingBank
   console.log("\nDeploying NBTStakingBank...");
   const NBTStakingBank = await hre.ethers.getContractFactory("NBTStakingBank");
-  const stakingBank = await NBTStakingBank.deploy(nbtTokenAddress, nbtTokenAddress);
+  const stakingBank = await NBTStakingBank.deploy(
+    nbtTokenAddress,
+    nbtTokenAddress,
+    resolvedFeeToken,
+    feeReceiverA,
+    feeReceiverB,
+    interactionFee
+  );
   await stakingBank.waitForDeployment();
   const stakingBankAddress = await stakingBank.getAddress();
   console.log(`NBTStakingBank deployed: ${stakingBankAddress}`);
 
-  const depositFeeReceiver = depositFeeReceiverInput && hre.ethers.isAddress(depositFeeReceiverInput)
-    ? depositFeeReceiverInput
-    : deployerAddress;
-  if (depositFee > 0 || depositFeeReceiverInput) {
-    console.log("\nConfiguring staking deposit fee...");
-    const feeTx = await stakingBank.setDepositFee(depositFee, depositFeeReceiver);
-    await feeTx.wait();
-    console.log(`Configured deposit fee: ${depositFee / 100}% -> ${depositFeeReceiver}`);
-  }
-
   // Fund initial rewards if specified
   if (rewardFundWei > 0n) {
-    console.log("\nFunding initial rewards...");
-    const approveTx = await token.approve(stakingBankAddress, rewardFundWei);
-    await approveTx.wait();
-    console.log(`Approved ${initialRewardFund} NBT for staking bank`);
-
-    const fundTx = await stakingBank.fundRewards(rewardFundWei);
+    console.log("\nTransferring initial invite reward reserve...");
+    const fundTx = await token.transfer(stakingBankAddress, rewardFundWei);
     await fundTx.wait();
-    console.log(`Funded ${initialRewardFund} NBT as initial rewards`);
+    console.log(`Transferred ${initialRewardFund} CZ to staking bank`);
   }
 
   // Write frontend env
@@ -101,6 +112,7 @@ async function main() {
     `VITE_NBT_TOKEN=${nbtTokenAddress}`,
     `VITE_STAKING_BANK=${stakingBankAddress}`,
     `VITE_NBT_PAIR=${nbtPair}`,
+    `VITE_FEE_TOKEN=${resolvedFeeToken}`,
     "",
   ].join("\n");
   fs.writeFileSync(frontendEnvPath, envContent);
@@ -121,8 +133,10 @@ async function main() {
     nbtToken: nbtTokenAddress,
     stakingBank: stakingBankAddress,
     nbtPair,
-    depositFee,
-    depositFeeReceiver,
+    feeToken: resolvedFeeToken,
+    interactionFee: hre.ethers.formatEther(interactionFee),
+    feeReceiverA,
+    feeReceiverB,
     tokenName,
     tokenSymbol,
     initialSupply,
@@ -138,30 +152,39 @@ async function main() {
     await new Promise(resolve => setTimeout(resolve, 30000)); // Wait 30 seconds
 
     try {
-      console.log("Verifying NBTToken...");
-      await hre.run("verify:verify", {
-        address: nbtTokenAddress,
-        constructorArguments: [
-          tokenName,
-          tokenSymbol,
-          initialSupplyWei,
-          feeReceiver,
-          buyFee,
-          sellFee,
-          initialPairs,
-          initialExcluded,
-        ],
-      });
-      console.log("NBTToken verified!");
+      if (!existingTokenAddress) {
+        console.log("Verifying local/test token...");
+        await hre.run("verify:verify", {
+          address: nbtTokenAddress,
+          constructorArguments: [
+            tokenName,
+            tokenSymbol,
+            initialSupplyWei,
+            feeReceiver,
+            buyFee,
+            sellFee,
+            initialPairs,
+            initialExcluded,
+          ],
+        });
+        console.log("Token verified!");
+      }
     } catch (err) {
-      console.log("NBTToken verification failed:", err.message);
+      console.log("Token verification failed:", err.message);
     }
 
     try {
       console.log("Verifying NBTStakingBank...");
       await hre.run("verify:verify", {
         address: stakingBankAddress,
-        constructorArguments: [nbtTokenAddress, nbtTokenAddress],
+        constructorArguments: [
+          nbtTokenAddress,
+          nbtTokenAddress,
+          resolvedFeeToken,
+          feeReceiverA,
+          feeReceiverB,
+          interactionFee,
+        ],
       });
       console.log("NBTStakingBank verified!");
     } catch (err) {
@@ -173,8 +196,8 @@ async function main() {
   console.log(`Network: ${isMainnet ? "BSC Mainnet" : "BSC Testnet"}`);
   console.log(`NBTToken: ${nbtTokenAddress}`);
   console.log(`StakingBank: ${stakingBankAddress}`);
-  console.log(`DepositFee: ${depositFee / 100}%`);
-  console.log(`DepositFeeReceiver: ${depositFeeReceiver}`);
+  console.log(`FeeToken: ${resolvedFeeToken}`);
+  console.log(`InteractionFee: ${hre.ethers.formatEther(interactionFee)} U`);
   console.log(`Deployer: ${deployerAddress}`);
   console.log("=========================================\n");
 }

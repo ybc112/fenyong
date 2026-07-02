@@ -1,767 +1,230 @@
-import { useEffect, useMemo, useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
-import { FiActivity, FiAlertTriangle, FiCopy, FiDollarSign, FiGift, FiPercent, FiRefreshCw, FiSave, FiShield, FiUsers } from 'react-icons/fi';
+import { FiAward, FiPause, FiPlay, FiSettings, FiShield, FiUploadCloud } from 'react-icons/fi';
 import { CONTRACTS, formatAddress, formatNumber, parseContractError } from '../utils/constants';
-import { useLanguage } from '../contexts/LanguageContext';
 
-export default function AdminPage({
-  account,
-  contracts,
-  stakingData,
-  tokenFeeData,
-  onRefresh,
-}) {
-  const { t } = useLanguage();
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [owners, setOwners] = useState({ stakingBank: null, nbtToken: null });
-  const [isStakingOperator, setIsStakingOperator] = useState(false);
-  const [loadingOwners, setLoadingOwners] = useState(true);
-  const [rewardAmount, setRewardAmount] = useState('');
-  const [tierRates, setTierRates] = useState(['', '', '', '']);
-  const [referralRates, setReferralRates] = useState(['', '', '']);
-  const [tokenConfig, setTokenConfig] = useState({});
-  const [stakingFeeConfig, setStakingFeeConfig] = useState({
-    depositFee: '',
-    receiver: '',
+export default function AdminPage({ account, contracts, stakingData, onRefresh }) {
+  const [releaseAmount, setReleaseAmount] = useState('');
+  const [allocateCount, setAllocateCount] = useState('100');
+  const [inviteReward, setInviteReward] = useState('');
+  const [feeConfig, setFeeConfig] = useState({
+    feeToken: CONTRACTS.FEE_TOKEN,
+    fee: '0.4',
+    receiverA: '0xfd682CbCb678ce5D273Eb778B946F6a4d8f1e8Ed',
+    receiverB: '0x5A378b61193ac2ce07cE816893C080804504a2f0',
   });
-  const [withdrawConfig, setWithdrawConfig] = useState({
-    token: '',
-    to: '',
-    amount: '',
-    nativeAmount: '',
-  });
-  const [operatorAddress, setOperatorAddress] = useState('');
+  const [isWorking, setIsWorking] = useState(false);
 
-  useEffect(() => {
-    const loadOwners = async () => {
-      setLoadingOwners(true);
-      try {
-        const [stakingOwner, tokenOwner] = await Promise.all([
-          contracts.stakingBank?.owner().catch(() => null),
-          contracts.nbtToken?.owner().catch(() => null),
-        ]);
-        setOwners({ stakingBank: stakingOwner, nbtToken: tokenOwner });
-      } finally {
-        setLoadingOwners(false);
-      }
-    };
+  const owner = null;
+  const isReady = account && contracts?.writeStakingBank;
+  const currentRelease = stakingData?.currentRelease;
+  const fee = stakingData?.interactionFeeConfig;
 
-    if (contracts.stakingBank || contracts.nbtToken) {
-      loadOwners();
-    } else {
-      setLoadingOwners(false);
-    }
-  }, [contracts.stakingBank, contracts.nbtToken]);
-
-  useEffect(() => {
-    const loadOperatorStatus = async () => {
-      if (!contracts.stakingBank || !account) {
-        setIsStakingOperator(false);
-        return;
-      }
-
-      try {
-        const status = await contracts.stakingBank.operators(account);
-        setIsStakingOperator(Boolean(status));
-      } catch {
-        setIsStakingOperator(false);
-      }
-    };
-
-    loadOperatorStatus();
-  }, [account, contracts.stakingBank]);
-
-  const isStakingOwner = owners.stakingBank && account && owners.stakingBank.toLowerCase() === account.toLowerCase();
-  const isTokenOwner = owners.nbtToken && account && owners.nbtToken.toLowerCase() === account.toLowerCase();
-  const canOperateStaking = isStakingOwner || isStakingOperator;
-  const isAnyOwner = canOperateStaking || isTokenOwner;
-  const tierConfigs = stakingData?.tierConfigs;
-  const miningStatus = stakingData?.miningStatus;
-  const pendingSyncRewards = stakingData?.pendingSyncRewards || '0';
-  const depositFeeConfig = stakingData?.depositFeeConfig;
-  const currentReferralRates = stakingData?.referralRates || [];
-  const feeConfig = tokenFeeData?.feeConfig;
-
-  const activeContracts = useMemo(() => ([
-    { name: 'NBT Token', address: CONTRACTS.NBT_TOKEN, isOwner: isTokenOwner },
-    { name: 'Staking Bank', address: CONTRACTS.STAKING_BANK, isOwner: isStakingOwner, isOperator: isStakingOperator },
-  ]), [isStakingOwner, isStakingOperator, isTokenOwner]);
-
-  const copyAddress = async (address) => {
-    if (!address) return;
-    await navigator.clipboard.writeText(address);
-    toast.success(t('toast.addressCopied'));
-  };
-
-  const handleFundRewards = async () => {
-    if (!contracts.writeStakingBank || !rewardAmount) return;
-    setIsUpdating(true);
+  const approveRewardToken = async () => {
+    if (!contracts?.writeNbtToken || !CONTRACTS.STAKING_BANK || !releaseAmount) return;
+    setIsWorking(true);
     try {
-      const amount = ethers.parseEther(rewardAmount);
-      if (contracts.nbtToken) {
-        const allowance = await contracts.nbtToken.allowance(account, CONTRACTS.STAKING_BANK);
-        if (allowance < amount) {
-          const approveTx = await contracts.writeNbtToken.approve(CONTRACTS.STAKING_BANK, ethers.MaxUint256);
-          toast.loading(t('toast.approving'), { id: 'fundApprove' });
-          await approveTx.wait();
-          toast.success(t('toast.approveSuccess'), { id: 'fundApprove' });
-        }
-      }
-      const tx = await contracts.writeStakingBank.fundRewards(amount);
-      toast.loading(t('toast.settingTotalRewards'), { id: 'fundRewards' });
+      const tx = await contracts.writeNbtToken.approve(CONTRACTS.STAKING_BANK, ethers.parseEther(releaseAmount));
+      toast.loading('正在授权月度释放 CZ...', { id: 'approveRelease' });
       await tx.wait();
-      toast.success(t('toast.totalRewardsSuccess'), { id: 'fundRewards' });
-      setRewardAmount('');
+      toast.success('授权成功', { id: 'approveRelease' });
       onRefresh?.();
     } catch (err) {
-      toast.error(parseContractError(err), { id: 'fundRewards' });
+      toast.error(parseContractError(err), { id: 'approveRelease' });
     } finally {
-      setIsUpdating(false);
+      setIsWorking(false);
     }
   };
 
-  const handleSyncRewards = async () => {
-    if (!contracts.writeStakingBank) return;
-    setIsUpdating(true);
+  const openRelease = async () => {
+    if (!isReady || !releaseAmount) return;
+    setIsWorking(true);
     try {
-      const tx = await contracts.writeStakingBank.syncRewards();
-      toast.loading(t('toast.syncingRewards'), { id: 'syncRewards' });
+      const tx = await contracts.writeStakingBank.openMonthlyRelease(ethers.parseEther(releaseAmount));
+      toast.loading('正在开启月度释放...', { id: 'openRelease' });
       await tx.wait();
-      toast.success(t('toast.syncRewardsSuccess'), { id: 'syncRewards' });
+      toast.success('月度释放已开启', { id: 'openRelease' });
+      setReleaseAmount('');
       onRefresh?.();
     } catch (err) {
-      toast.error(parseContractError(err), { id: 'syncRewards' });
+      toast.error(parseContractError(err), { id: 'openRelease' });
     } finally {
-      setIsUpdating(false);
+      setIsWorking(false);
     }
   };
 
-  const handleSetDepositFee = async () => {
-    if (!contracts.writeStakingBank || stakingFeeConfig.depositFee === '' || !ethers.isAddress(stakingFeeConfig.receiver)) {
-      toast.error(t('toast.invalidAddress'));
+  const allocateRelease = async () => {
+    if (!isReady) return;
+    setIsWorking(true);
+    try {
+      const tx = await contracts.writeStakingBank.allocateMonthlyRelease(Number(allocateCount || 100));
+      toast.loading('正在分配排名奖励...', { id: 'allocateRelease' });
+      await tx.wait();
+      toast.success('本批排名奖励已入账', { id: 'allocateRelease' });
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'allocateRelease' });
+    } finally {
+      setIsWorking(false);
+    }
+  };
+
+  const updateFeeConfig = async () => {
+    if (!isReady) return;
+    if (!ethers.isAddress(feeConfig.feeToken) || !ethers.isAddress(feeConfig.receiverA) || !ethers.isAddress(feeConfig.receiverB)) {
+      toast.error('请填写有效地址');
       return;
     }
-    setIsUpdating(true);
+    setIsWorking(true);
     try {
-      const depositFee = Math.floor(parseFloat(stakingFeeConfig.depositFee) * 100);
-      const tx = await contracts.writeStakingBank.setDepositFee(depositFee, stakingFeeConfig.receiver);
-      toast.loading(t('toast.settingDepositFee'), { id: 'depositFee' });
+      const tx = await contracts.writeStakingBank.setInteractionFeeConfig(
+        feeConfig.feeToken,
+        ethers.parseEther(feeConfig.fee || '0'),
+        feeConfig.receiverA,
+        feeConfig.receiverB,
+      );
+      toast.loading('正在更新交互费配置...', { id: 'feeConfig' });
       await tx.wait();
-      toast.success(t('toast.depositFeeSuccess'), { id: 'depositFee' });
-      setStakingFeeConfig({ depositFee: '', receiver: '' });
+      toast.success('交互费配置已更新', { id: 'feeConfig' });
       onRefresh?.();
     } catch (err) {
-      toast.error(parseContractError(err), { id: 'depositFee' });
+      toast.error(parseContractError(err), { id: 'feeConfig' });
     } finally {
-      setIsUpdating(false);
+      setIsWorking(false);
     }
   };
 
-  const handleAdminWithdrawToken = async () => {
-    if (
-      !contracts.writeStakingBank ||
-      !ethers.isAddress(withdrawConfig.token) ||
-      !ethers.isAddress(withdrawConfig.to) ||
-      !withdrawConfig.amount
-    ) {
-      toast.error(t('toast.fillValidAddress'));
-      return;
-    }
-
-    setIsUpdating(true);
+  const updateInviteReward = async () => {
+    if (!isReady || inviteReward === '') return;
+    setIsWorking(true);
     try {
-      const amount = ethers.parseEther(withdrawConfig.amount);
-      const tx = await contracts.writeStakingBank.adminWithdrawToken(withdrawConfig.token, withdrawConfig.to, amount);
-      toast.loading(t('toast.adminWithdrawing'), { id: 'adminWithdrawToken' });
+      const tx = await contracts.writeStakingBank.setInviteReward(ethers.parseEther(inviteReward));
+      toast.loading('正在更新邀请奖励...', { id: 'inviteReward' });
       await tx.wait();
-      toast.success(t('toast.adminWithdrawSuccess'), { id: 'adminWithdrawToken' });
-      setWithdrawConfig(prev => ({ ...prev, amount: '' }));
+      toast.success('邀请奖励已更新', { id: 'inviteReward' });
+      setInviteReward('');
       onRefresh?.();
     } catch (err) {
-      toast.error(parseContractError(err), { id: 'adminWithdrawToken' });
+      toast.error(parseContractError(err), { id: 'inviteReward' });
     } finally {
-      setIsUpdating(false);
+      setIsWorking(false);
     }
   };
 
-  const handleAdminWithdrawNative = async () => {
-    if (!contracts.writeStakingBank || !ethers.isAddress(withdrawConfig.to) || !withdrawConfig.nativeAmount) {
-      toast.error(t('toast.fillValidAddress'));
-      return;
-    }
-
-    setIsUpdating(true);
+  const setPaused = async (paused) => {
+    if (!isReady) return;
+    setIsWorking(true);
     try {
-      const amount = ethers.parseEther(withdrawConfig.nativeAmount);
-      const tx = await contracts.writeStakingBank.adminWithdrawNative(withdrawConfig.to, amount);
-      toast.loading(t('toast.adminWithdrawing'), { id: 'adminWithdrawNative' });
+      const tx = paused ? await contracts.writeStakingBank.pause() : await contracts.writeStakingBank.unpause();
+      toast.loading(paused ? '正在暂停...' : '正在恢复...', { id: 'pause' });
       await tx.wait();
-      toast.success(t('toast.adminWithdrawSuccess'), { id: 'adminWithdrawNative' });
-      setWithdrawConfig(prev => ({ ...prev, nativeAmount: '' }));
+      toast.success(paused ? '合约已暂停' : '合约已恢复', { id: 'pause' });
       onRefresh?.();
     } catch (err) {
-      toast.error(parseContractError(err), { id: 'adminWithdrawNative' });
+      toast.error(parseContractError(err), { id: 'pause' });
     } finally {
-      setIsUpdating(false);
+      setIsWorking(false);
     }
   };
-
-  const handleSetOperator = async (status) => {
-    if (!contracts.writeStakingBank || !ethers.isAddress(operatorAddress)) {
-      toast.error(t('toast.invalidAddress'));
-      return;
-    }
-
-    setIsUpdating(true);
-    try {
-      const tx = await contracts.writeStakingBank.setOperator(operatorAddress, status);
-      toast.loading(status ? t('toast.settingOperator') : t('toast.removingOperator'), { id: 'operator' });
-      await tx.wait();
-      toast.success(status ? t('toast.operatorSetSuccess') : t('toast.operatorRemovedSuccess'), { id: 'operator' });
-      setOperatorAddress('');
-      onRefresh?.();
-    } catch (err) {
-      toast.error(parseContractError(err), { id: 'operator' });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleSetTierRate = async (tier) => {
-    const rate = tierRates[tier];
-    if (!contracts.writeStakingBank || rate === '') return;
-    setIsUpdating(true);
-    try {
-      const current = await contracts.stakingBank.getTierConfig(tier);
-      const dailyRate = Math.floor(parseFloat(rate) * 100);
-      const tx = await contracts.writeStakingBank.setTierConfig(tier, current.duration, dailyRate);
-      toast.loading(t('toast.settingTierRate'), { id: `tier-${tier}` });
-      await tx.wait();
-      toast.success(t('toast.tierRateSuccess'), { id: `tier-${tier}` });
-      setTierRates(prev => prev.map((item, index) => index === tier ? '' : item));
-      onRefresh?.();
-    } catch (err) {
-      toast.error(parseContractError(err), { id: `tier-${tier}` });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleSetReferralRates = async () => {
-    if (!contracts.writeStakingBank) return;
-    const rates = referralRates.filter(rate => rate !== '');
-    if (rates.length === 0) {
-      toast.error(t('toast.fillValidRate'));
-      return;
-    }
-
-    setIsUpdating(true);
-    try {
-      const ratesInBp = rates.map(rate => Math.floor(parseFloat(rate) * 100));
-      const tx = await contracts.writeStakingBank.setReferralRates(ratesInBp);
-      toast.loading(t('toast.settingReferralRates'), { id: 'refRates' });
-      await tx.wait();
-      toast.success(t('toast.referralRatesSuccess'), { id: 'refRates' });
-      setReferralRates(['', '', '']);
-      onRefresh?.();
-    } catch (err) {
-      toast.error(parseContractError(err), { id: 'refRates' });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleSetFees = async () => {
-    if (!contracts.writeNbtToken || tokenConfig.buyFee === '' || tokenConfig.sellFee === '') return;
-    setIsUpdating(true);
-    try {
-      const buyFee = Math.floor(parseFloat(tokenConfig.buyFee) * 100);
-      const sellFee = Math.floor(parseFloat(tokenConfig.sellFee) * 100);
-      const tx = await contracts.writeNbtToken.setFees(buyFee, sellFee);
-      toast.loading(t('toast.settingFees'), { id: 'fees' });
-      await tx.wait();
-      toast.success(t('toast.feesSuccess'), { id: 'fees' });
-      setTokenConfig(prev => ({ ...prev, buyFee: '', sellFee: '' }));
-      onRefresh?.();
-    } catch (err) {
-      toast.error(parseContractError(err), { id: 'fees' });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleSetPair = async () => {
-    if (!contracts.writeNbtToken || !ethers.isAddress(tokenConfig.pairAddress)) {
-      toast.error(t('toast.invalidAddress'));
-      return;
-    }
-    setIsUpdating(true);
-    try {
-      const tx = await contracts.writeNbtToken.setPair(tokenConfig.pairAddress, true);
-      toast.loading(t('toast.settingPair'), { id: 'pair' });
-      await tx.wait();
-      toast.success(t('toast.pairSuccess'), { id: 'pair' });
-      setTokenConfig(prev => ({ ...prev, pairAddress: '' }));
-      onRefresh?.();
-    } catch (err) {
-      toast.error(parseContractError(err), { id: 'pair' });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleSetExcluded = async (status) => {
-    if (!contracts.writeNbtToken || !ethers.isAddress(tokenConfig.excludeAddress)) {
-      toast.error(t('toast.invalidAddress'));
-      return;
-    }
-    setIsUpdating(true);
-    try {
-      const tx = await contracts.writeNbtToken.setExcludedFromFee(tokenConfig.excludeAddress, status);
-      toast.loading(status ? t('toast.addingWhitelist') : t('toast.removingWhitelist'), { id: 'exclude' });
-      await tx.wait();
-      toast.success(status ? t('toast.whitelistAdded') : t('toast.whitelistRemoved'), { id: 'exclude' });
-      setTokenConfig(prev => ({ ...prev, excludeAddress: '' }));
-      onRefresh?.();
-    } catch (err) {
-      toast.error(parseContractError(err), { id: 'exclude' });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleSetFeeReceiver = async () => {
-    if (!contracts.writeNbtToken || !ethers.isAddress(tokenConfig.feeReceiver)) {
-      toast.error(t('toast.invalidAddress'));
-      return;
-    }
-    setIsUpdating(true);
-    try {
-      const tx = await contracts.writeNbtToken.setFeeReceiver(tokenConfig.feeReceiver);
-      toast.loading(t('toast.settingFeeReceiver'), { id: 'receiver' });
-      await tx.wait();
-      toast.success(t('toast.feeReceiverSuccess'), { id: 'receiver' });
-      setTokenConfig(prev => ({ ...prev, feeReceiver: '' }));
-      onRefresh?.();
-    } catch (err) {
-      toast.error(parseContractError(err), { id: 'receiver' });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  if (!account) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="text-center">
-          <FiShield className="w-16 h-16 text-white/20 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-2">{t('admin.title')}</h2>
-          <p className="text-white/50">{t('admin.pleaseConnect')}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (loadingOwners) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-[#00D9A5]/30 border-t-[#00D9A5] rounded-full animate-spin mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-2">{t('admin.loading')}</h2>
-          <p className="text-white/50">{t('admin.verifyingAdmin')}</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAnyOwner) {
-    return (
-      <div className="min-h-[60vh] flex items-center justify-center">
-        <div className="text-center">
-          <FiAlertTriangle className="w-16 h-16 text-[#FF6B6B] mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-2">{t('admin.noAccess')}</h2>
-          <p className="text-white/50 mb-4">{t('admin.notOwner')}</p>
-          <div className="text-left bg-white/5 rounded-xl p-4 max-w-md mx-auto">
-            <p className="text-xs text-white/60 mb-1">{t('admin.connectedAddress')} <code className="text-[#00D9A5]">{formatAddress(account)}</code></p>
-            <p className="text-xs text-white/60 mb-1">NBT Token Owner: <code className="text-[#FFB800]">{owners.nbtToken || t('admin.notLoaded')}</code></p>
-            <p className="text-xs text-white/60 mb-1">Staking Bank Owner: <code className="text-[#FFB800]">{owners.stakingBank || t('admin.notLoaded')}</code></p>
-            <p className="text-xs text-white/60">Staking Operator: <code className="text-[#FFB800]">{isStakingOperator ? 'Yes' : 'No'}</code></p>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#FF6B6B] to-[#FF8A00] flex items-center justify-center shadow-lg shadow-[#FF6B6B]/20">
-            <FiShield className="w-7 h-7 text-white" />
-          </div>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-white">{t('admin.title')}</h1>
-            <p className="text-white/50">Fresh deployment controls for NBT Token and Staking Bank</p>
-          </div>
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3">
+            <FiShield className="text-[#FFB800]" />
+            CZ 节点管理台
+          </h1>
+          <p className="text-white/50 mt-1">月度释放、排名分配、交互费与邀请奖励配置</p>
         </div>
-        <button
-          onClick={onRefresh}
-          className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 text-white/70 hover:bg-white/20 transition-colors"
-        >
-          <FiRefreshCw className="w-4 h-4" />
-          {t('admin.refreshData')}
-        </button>
+        <div className="badge-glow">当前钱包 {formatAddress(account || owner)}</div>
       </div>
 
-      <div className="p-4 rounded-xl bg-[#FF6B6B]/10 border border-[#FF6B6B]/30">
-        <div className="flex items-start gap-3">
-          <FiAlertTriangle className="w-5 h-5 text-[#FF6B6B] mt-0.5" />
-          <div>
-            <p className="text-[#FF6B6B] font-medium">{t('admin.warning')}</p>
-            <p className="text-white/50 text-sm mt-1">These settings affect live reward emission, referral accounting, and token transfer fees.</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-4">
-        {activeContracts.map((contract) => (
-          <div key={contract.name} className="p-4 rounded-xl bg-white/5 border border-white/10">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm text-white/50">{contract.name}</span>
-              {contract.isOwner ? (
-                <span className="px-2 py-0.5 rounded text-xs bg-[#00D9A5]/20 text-[#00D9A5]">Owner</span>
-              ) : contract.isOperator ? (
-                <span className="px-2 py-0.5 rounded text-xs bg-[#FFB800]/20 text-[#FFB800]">Operator</span>
-              ) : (
-                <span className="px-2 py-0.5 rounded text-xs bg-white/10 text-white/40">Non-Owner</span>
-              )}
-            </div>
-            <div className="flex items-center gap-2">
-              <code className="text-xs text-white/70 truncate flex-1">{contract.address || 'Not configured'}</code>
-              <button
-                onClick={() => copyAddress(contract.address)}
-                className="p-1 rounded hover:bg-white/10 text-white/40 hover:text-white/70 transition-colors"
-              >
-                <FiCopy className="w-3 h-3" />
-              </button>
-            </div>
+      <section className="grid lg:grid-cols-3 gap-4">
+        {[
+          { label: '全网质押', value: stakingData?.miningStatus?.totalStaked || '0', suffix: 'CZ' },
+          { label: '节点数', value: stakingData?.miningStatus?.rankedNodeCount || 0, suffix: '个' },
+          { label: '待领取奖励', value: stakingData?.miningStatus?.claimableRewards || '0', suffix: 'CZ' },
+        ].map((item) => (
+          <div key={item.label} className="stat-card-premium">
+            <div className="text-white/45 text-sm mb-2">{item.label}</div>
+            <div className="text-2xl font-bold text-white">{formatNumber(item.value, 4)} <span className="text-sm text-white/40">{item.suffix}</span></div>
           </div>
         ))}
-      </div>
+      </section>
 
-      {canOperateStaking && (
-        <section className="space-y-6">
-          <div className="neon-card">
-            <div className="neon-card-inner">
-              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <FiActivity className="w-5 h-5 text-[#00D9A5]" />
-                Staking Bank
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                  { label: t('admin.totalStaked'), value: miningStatus?.totalStaked, suffix: 'NBT' },
-                  { label: t('admin.distributed'), value: miningStatus?.totalDistributed, suffix: 'NBT' },
-                  { label: t('admin.remainingRewards'), value: miningStatus?.remainingRewards, suffix: 'NBT' },
-                  { label: t('admin.status'), value: miningStatus?.miningEnded ? t('admin.ended') : t('admin.inProgress'), suffix: '' },
-                ].map((item) => (
-                  <div key={item.label} className="p-3 rounded-lg bg-white/5">
-                    <div className="text-xs text-white/40 mb-1">{item.label}</div>
-                    <div className="text-lg font-bold text-white">
-                      {item.suffix ? `${formatNumber(item.value)} ${item.suffix}` : item.value}
-                    </div>
-                  </div>
-                ))}
-              </div>
+      <section className="grid lg:grid-cols-2 gap-6">
+        <div className="neon-card">
+          <div className="neon-card-inner">
+            <h2 className="text-xl font-bold text-white mb-5 flex items-center gap-2">
+              <FiUploadCloud className="text-[#FFB800]" />
+              月度释放
+            </h2>
+            <div className="grid sm:grid-cols-2 gap-3 mb-4">
+              <input className="input-premium" value={releaseAmount} onChange={(e) => setReleaseAmount(e.target.value)} placeholder="释放 CZ 数量" />
+              <input className="input-premium" value={allocateCount} onChange={(e) => setAllocateCount(e.target.value)} placeholder="每批分配节点数" />
             </div>
-          </div>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <button onClick={approveRewardToken} disabled={isWorking || !releaseAmount} className="btn-ghost disabled:opacity-50">授权释放 CZ</button>
+              <button onClick={openRelease} disabled={isWorking || !releaseAmount} className="btn-premium disabled:opacity-50"><span>开启月度释放</span></button>
+            </div>
 
-          <div className="glass-premium p-6">
-            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-              <FiGift className="w-4 h-4 text-[#00D9A5]" />
-              Fund Rewards
-            </h3>
-            <div className="flex gap-3">
-              <input
-                type="number"
-                placeholder="Reward amount"
-                value={rewardAmount}
-                onChange={(e) => setRewardAmount(e.target.value)}
-                className="input-premium flex-1"
-              />
-              <button
-                onClick={handleFundRewards}
-                disabled={isUpdating || !rewardAmount}
-                className="btn-premium px-6 disabled:opacity-50"
-              >
-                <FiSave className="w-4 h-4 mr-2" />
-                {t('admin.save')}
-              </button>
-            </div>
-            <div className="mt-4 p-4 rounded-xl bg-white/5 border border-white/10">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm text-white/70">{t('admin.directRewardTopup')}</div>
-                  <div className="text-xs text-white/40 mt-1">
-                    {t('admin.pendingSyncRewards')}: {formatNumber(pendingSyncRewards, 4)} NBT
-                  </div>
+            {currentRelease && Number(currentRelease.epochId) > 0 && (
+              <div className="mt-5 p-4 rounded-xl bg-white/5 border border-white/10">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div><span className="text-white/40">Epoch</span><div className="font-bold text-white">#{currentRelease.epochId}</div></div>
+                  <div><span className="text-white/40">状态</span><div className="font-bold text-white">{currentRelease.finalized ? '已完成' : '分配中'}</div></div>
+                  <div><span className="text-white/40">总释放</span><div className="font-bold text-white">{formatNumber(currentRelease.amount, 4)} CZ</div></div>
+                  <div><span className="text-white/40">已分配</span><div className="font-bold text-white">{formatNumber(currentRelease.allocatedAmount, 4)} CZ</div></div>
                 </div>
-                <button
-                  onClick={handleSyncRewards}
-                  disabled={isUpdating}
-                  className="btn-ghost px-4 disabled:opacity-50"
-                >
-                  <FiRefreshCw className="w-4 h-4 mr-2" />
-                  {t('admin.syncRewards')}
+                <button onClick={allocateRelease} disabled={isWorking || currentRelease.finalized} className="w-full mt-4 btn-premium disabled:opacity-50">
+                  <span>分配下一批</span>
                 </button>
               </div>
-            </div>
-            <p className="text-xs text-white/40 mt-2">{t('admin.fundRewardsNote')}</p>
+            )}
+          </div>
+        </div>
+
+        <div className="glass-premium p-5">
+          <h2 className="text-xl font-bold text-white mb-5 flex items-center gap-2">
+            <FiSettings className="text-[#00D9A5]" />
+            参数配置
+          </h2>
+          <div className="space-y-3">
+            <input className="input-premium font-mono text-sm" value={feeConfig.feeToken} onChange={(e) => setFeeConfig(prev => ({ ...prev, feeToken: e.target.value }))} placeholder="交互费 Token" />
+            <input className="input-premium" value={feeConfig.fee} onChange={(e) => setFeeConfig(prev => ({ ...prev, fee: e.target.value }))} placeholder="每次交互费，如 0.4" />
+            <input className="input-premium font-mono text-sm" value={feeConfig.receiverA} onChange={(e) => setFeeConfig(prev => ({ ...prev, receiverA: e.target.value }))} placeholder="0.2U 接收地址 A" />
+            <input className="input-premium font-mono text-sm" value={feeConfig.receiverB} onChange={(e) => setFeeConfig(prev => ({ ...prev, receiverB: e.target.value }))} placeholder="0.2U 接收地址 B" />
+            <button onClick={updateFeeConfig} disabled={isWorking} className="w-full btn-premium disabled:opacity-50"><span>保存交互费配置</span></button>
           </div>
 
-          {isStakingOwner && (
-          <div className="glass-premium p-6">
-            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-              <FiPercent className="w-4 h-4 text-[#FFB800]" />
-              {t('admin.depositFeeSetting')}
-            </h3>
-            <div className="grid md:grid-cols-2 gap-4 mb-4">
-              <div className="p-3 rounded-lg bg-white/5">
-                <div className="text-xs text-white/40 mb-1">{t('admin.currentDepositFee')}</div>
-                <div className="text-lg font-bold text-white">{depositFeeConfig?.depositFee ?? 0}%</div>
-              </div>
-              <div className="p-3 rounded-lg bg-white/5">
-                <div className="text-xs text-white/40 mb-1">{t('admin.depositFeeReceiver')}</div>
-                <div className="text-lg font-bold text-white">{formatAddress(depositFeeConfig?.depositFeeReceiver)}</div>
-              </div>
-            </div>
-            <div className="grid md:grid-cols-2 gap-3 mb-3">
-              <input
-                type="number"
-                step="0.1"
-                placeholder={t('admin.depositFeePercent')}
-                value={stakingFeeConfig.depositFee}
-                onChange={(e) => setStakingFeeConfig(prev => ({ ...prev, depositFee: e.target.value }))}
-                className="input-premium"
-              />
-              <input
-                type="text"
-                placeholder={t('admin.depositFeeReceiver')}
-                value={stakingFeeConfig.receiver}
-                onChange={(e) => setStakingFeeConfig(prev => ({ ...prev, receiver: e.target.value }))}
-                className="input-premium font-mono text-sm"
-              />
-            </div>
-            <button
-              onClick={handleSetDepositFee}
-              disabled={isUpdating || stakingFeeConfig.depositFee === '' || !stakingFeeConfig.receiver}
-              className="btn-premium w-full disabled:opacity-50"
-            >
-              <FiSave className="w-4 h-4 mr-2" />
-              {t('admin.save')}
-            </button>
-            <p className="text-xs text-white/40 mt-2">{t('admin.depositFeeNote')}</p>
-          </div>
-          )}
-
-          {isStakingOwner && (
-          <div className="glass-premium p-6 border border-[#FF6B6B]/30">
-            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-              <FiAlertTriangle className="w-4 h-4 text-[#FF6B6B]" />
-              {t('admin.superWithdraw')}
-            </h3>
-            <p className="text-sm text-white/50 mb-4">{t('admin.superWithdrawDesc')}</p>
-            <div className="grid md:grid-cols-3 gap-3 mb-3">
-              <input
-                type="text"
-                placeholder={t('admin.tokenAddress')}
-                value={withdrawConfig.token}
-                onChange={(e) => setWithdrawConfig(prev => ({ ...prev, token: e.target.value }))}
-                className="input-premium font-mono text-sm"
-              />
-              <input
-                type="text"
-                placeholder={t('admin.withdrawTo')}
-                value={withdrawConfig.to}
-                onChange={(e) => setWithdrawConfig(prev => ({ ...prev, to: e.target.value }))}
-                className="input-premium font-mono text-sm"
-              />
-              <input
-                type="number"
-                placeholder={t('admin.withdrawAmount')}
-                value={withdrawConfig.amount}
-                onChange={(e) => setWithdrawConfig(prev => ({ ...prev, amount: e.target.value }))}
-                className="input-premium"
-              />
-            </div>
-            <button
-              onClick={handleAdminWithdrawToken}
-              disabled={isUpdating || !withdrawConfig.token || !withdrawConfig.to || !withdrawConfig.amount}
-              className="w-full py-3 rounded-xl bg-[#FF6B6B]/20 text-[#FF6B6B] font-medium hover:bg-[#FF6B6B]/30 transition-colors disabled:opacity-50"
-            >
-              {t('admin.withdrawToken')}
-            </button>
-            <div className="grid md:grid-cols-[1fr_auto] gap-3 mt-4">
-              <input
-                type="number"
-                placeholder={t('admin.nativeWithdrawAmount')}
-                value={withdrawConfig.nativeAmount}
-                onChange={(e) => setWithdrawConfig(prev => ({ ...prev, nativeAmount: e.target.value }))}
-                className="input-premium"
-              />
-              <button
-                onClick={handleAdminWithdrawNative}
-                disabled={isUpdating || !withdrawConfig.to || !withdrawConfig.nativeAmount}
-                className="px-6 py-3 rounded-xl bg-white/10 text-white/70 font-medium hover:bg-white/20 transition-colors disabled:opacity-50"
-              >
-                {t('admin.withdrawNative')}
-              </button>
-            </div>
-          </div>
-          )}
-
-          {isStakingOwner && (
-          <div className="glass-premium p-6">
-            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-              <FiShield className="w-4 h-4 text-[#00D9A5]" />
-              {t('admin.operatorSetting')}
-            </h3>
-            <p className="text-sm text-white/50 mb-4">{t('admin.operatorDesc')}</p>
-            <div className="flex gap-3">
-              <input
-                type="text"
-                placeholder={t('admin.operatorAddress')}
-                value={operatorAddress}
-                onChange={(e) => setOperatorAddress(e.target.value)}
-                className="input-premium flex-1 font-mono text-sm"
-              />
-              <button
-                onClick={() => handleSetOperator(true)}
-                disabled={isUpdating || !operatorAddress}
-                className="btn-premium px-4 disabled:opacity-50"
-              >
-                {t('admin.add')}
-              </button>
-              <button
-                onClick={() => handleSetOperator(false)}
-                disabled={isUpdating || !operatorAddress}
-                className="btn-ghost px-4 disabled:opacity-50"
-              >
-                {t('admin.remove')}
-              </button>
-            </div>
-          </div>
-          )}
-
-          <div className="glass-premium p-6">
-            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-              <FiPercent className="w-4 h-4 text-[#FFB800]" />
-              {t('admin.tierRateSetting')}
-            </h3>
-            <div className="space-y-3">
-              {[t('admin.flexibleLock'), t('admin.months3Lock'), t('admin.months6Lock'), t('admin.months12Lock')].map((name, tier) => (
-                <div key={tier} className="flex gap-3 items-center">
-                  <span className="text-white/60 w-24 text-sm">{name}</span>
-                  <div className="text-sm text-white/40 w-24">
-                    {tierConfigs?.dailyRates?.[tier] ?? '-'}% / day
-                  </div>
-                  <input
-                    type="number"
-                    step="0.1"
-                    placeholder="0.4"
-                    value={tierRates[tier]}
-                    onChange={(e) => setTierRates(prev => prev.map((item, index) => index === tier ? e.target.value : item))}
-                    className="input-premium flex-1"
-                  />
-                  <button
-                    onClick={() => handleSetTierRate(tier)}
-                    disabled={isUpdating || tierRates[tier] === ''}
-                    className="btn-ghost px-4 disabled:opacity-50"
-                  >
-                    {t('admin.save')}
-                  </button>
-                </div>
-              ))}
-            </div>
+          <div className="mt-5 p-4 rounded-xl bg-white/5 border border-white/10 text-sm text-white/55">
+            当前交互费：{formatNumber(fee?.fee || 0, 4)} U，
+            A {formatAddress(fee?.receiverA)}，B {formatAddress(fee?.receiverB)}
           </div>
 
-          <div className="glass-premium p-6">
-            <h3 className="font-semibold text-white mb-4 flex items-center gap-2">
-              <FiUsers className="w-4 h-4 text-[#00D9A5]" />
-              {t('admin.referralRatesSetting')}
-            </h3>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {currentReferralRates.map((rate, i) => (
-                <div key={i} className="px-3 py-2 rounded-lg bg-white/5">
-                  <div className="text-xs text-white/40">{i + 1}{t('tokenMining.level')}</div>
-                  <div className="text-sm font-bold text-[#00D9A5]">{rate}%</div>
-                </div>
-              ))}
-            </div>
-            <div className="grid md:grid-cols-3 gap-3 mb-3">
-              {referralRates.map((rate, i) => (
-                <input
-                  key={i}
-                  type="number"
-                  step="0.1"
-                  placeholder={`${i + 1}${t('tokenMining.level')} %`}
-                  value={rate}
-                  onChange={(e) => setReferralRates(prev => prev.map((item, index) => index === i ? e.target.value : item))}
-                  className="input-premium"
-                />
-              ))}
-            </div>
-            <button
-              onClick={handleSetReferralRates}
-              disabled={isUpdating || !referralRates.some(Boolean)}
-              className="btn-premium w-full disabled:opacity-50"
-            >
-              <FiSave className="w-4 h-4 mr-2" />
-              {t('admin.saveReferralRates')}
-            </button>
+          <div className="mt-5 grid sm:grid-cols-[1fr_auto] gap-3">
+            <input className="input-premium" value={inviteReward} onChange={(e) => setInviteReward(e.target.value)} placeholder="邀请奖励 CZ，默认 1" />
+            <button onClick={updateInviteReward} disabled={isWorking || inviteReward === ''} className="btn-ghost disabled:opacity-50">保存</button>
           </div>
-        </section>
-      )}
+        </div>
+      </section>
 
-      {isTokenOwner && (
-        <section className="space-y-6">
-          <div className="neon-card">
-            <div className="neon-card-inner">
-              <h3 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <FiDollarSign className="w-5 h-5 text-[#FFB800]" />
-                NBT Token
-              </h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div className="p-3 rounded-lg bg-white/5">
-                  <div className="text-xs text-white/40 mb-1">{t('admin.buySlippage')}</div>
-                  <div className="text-lg font-bold text-white">{feeConfig?.buyFee ?? '-'}%</div>
-                </div>
-                <div className="p-3 rounded-lg bg-white/5">
-                  <div className="text-xs text-white/40 mb-1">{t('admin.sellSlippage')}</div>
-                  <div className="text-lg font-bold text-white">{feeConfig?.sellFee ?? '-'}%</div>
-                </div>
-                <div className="p-3 rounded-lg bg-white/5">
-                  <div className="text-xs text-white/40 mb-1">{t('admin.feeReceiver')}</div>
-                  <div className="text-lg font-bold text-white">{formatAddress(feeConfig?.feeReceiver)}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-4 rounded-xl bg-[#FFB800]/10 border border-[#FFB800]/30">
-            <div className="flex items-start gap-3">
-              <FiAlertTriangle className="w-5 h-5 text-[#FFB800] mt-0.5" />
-              <div>
-                <p className="text-[#FFB800] font-medium">{t('admin.warning')}</p>
-                <p className="text-white/50 text-sm mt-1">
-                  NBT Token 的手续费收取地址在部署时通过 `FEE_RECEIVER` 固定设置，部署后不可修改。当前仅展示链上读数，不再提供编辑入口。
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
+      <section className="glass-premium p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-white">暂停控制</h2>
+          <p className="text-white/45 text-sm">暂停后用户不能质押、提取或领取，管理员仍可恢复。</p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={() => setPaused(true)} disabled={isWorking || stakingData?.isPaused} className="px-4 py-2 rounded-lg bg-[#FFB800]/20 text-[#FFB800] disabled:opacity-50 flex items-center gap-2">
+            <FiPause /> 暂停
+          </button>
+          <button onClick={() => setPaused(false)} disabled={isWorking || !stakingData?.isPaused} className="px-4 py-2 rounded-lg bg-[#00D9A5]/20 text-[#00D9A5] disabled:opacity-50 flex items-center gap-2">
+            <FiPlay /> 恢复
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

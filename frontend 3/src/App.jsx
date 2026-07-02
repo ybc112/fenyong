@@ -43,6 +43,11 @@ function App() {
     account,
     CONTRACTS.STAKING_BANK
   );
+  const { allowance: feeAllowance, refetch: refetchFeeAllowance } = useAllowance(
+    contracts.feeToken,
+    account,
+    CONTRACTS.STAKING_BANK
+  );
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -105,7 +110,7 @@ function App() {
           return;
         }
 
-        setShowReferrerModal(true);
+        setShowReferrerModal(false);
       } catch (err) {
         console.error('Check referrer error:', err);
       }
@@ -119,6 +124,7 @@ function App() {
     tokenFeeData.refetch();
     refetchTokenBalance();
     refetchStakingAllowance();
+    refetchFeeAllowance();
   };
 
   useEffect(() => {
@@ -172,6 +178,7 @@ function App() {
             stakingData={stakingData}
             tokenBalance={tokenBalance}
             stakingAllowance={stakingAllowance}
+            feeAllowance={feeAllowance}
             contracts={contracts}
             isCorrectNetwork={isCorrectNetwork}
             onSwitchNetwork={switchNetwork}
@@ -183,6 +190,7 @@ function App() {
           <ReferralPage
             account={account}
             stakingData={stakingData}
+            feeAllowance={feeAllowance}
             contracts={contracts}
             onRefresh={handleRefresh}
           />
@@ -336,7 +344,7 @@ function App() {
                   <path d="M17 7H21V11" stroke="#0B1120" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
-              <span className="text-white/50 text-sm">&copy; 2026 NoveBank Protocol. {t('footer.builtOn')}</span>
+              <span className="text-white/50 text-sm">&copy; 2026 Crypto Zenith. {t('footer.builtOn')}</span>
             </div>
             {CONTRACTS.STAKING_BANK && (
               <a
