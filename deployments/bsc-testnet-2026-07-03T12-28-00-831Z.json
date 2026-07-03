@@ -1,0 +1,18 @@
+{
+  "network": "bsc-testnet",
+  "chainId": 97,
+  "timestamp": "2026-07-03T12-28-00-831Z",
+  "deployer": "0x9B0c7994F4289Aa247d06A96C4447EB36c13CfBb",
+  "nbtToken": "0x99fbDdb26bc6b10DC9df80d6c6D943812047f406",
+  "stakingBank": "0x754767c9C0116caA5A4BDD07Acc3411498C7078a",
+  "nbtPair": "",
+  "feeToken": "0x99fbDdb26bc6b10DC9df80d6c6D943812047f406",
+  "interactionFee": "0.4",
+  "feeReceiverA": "0xfd682CbCb678ce5D273Eb778B946F6a4d8f1e8Ed",
+  "feeReceiverB": "0x5A378b61193ac2ce07cE816893C080804504a2f0",
+  "tokenName": "Crypto Zenith Test",
+  "tokenSymbol": "CZ",
+  "initialSupply": "200000000",
+  "feeReceiver": "0x9B0c7994F4289Aa247d06A96C4447EB36c13CfBb",
+  "initialRewardFund": "1000000"
+}

@@ -42,6 +42,7 @@ contract NBTStakingBankTest {
         NodeUser staker = new NodeUser();
         NodeUser inviter = new NodeUser();
 
+        bank.setStakeValueRate(2 ether);
         token.transfer(address(bank), 10 ether);
         token.transfer(address(staker), 100.4 ether);
         staker.approve(token, address(bank), 100.4 ether);
@@ -59,7 +60,7 @@ contract NBTStakingBankTest {
         require(rank == 1, "getter rank mismatch");
         require(totalClaimed == 0, "claimed mismatch");
         require(info.directReferrals == 1, "direct referrals mismatch");
-        require(info.referralStakeVolume == 100 ether, "score mismatch");
+        require(info.referralStakeVolume == 200 ether, "score mismatch");
         require(info.pendingInviteRewards == 1 ether, "invite reward mismatch");
         require(pendingRewards == 1 ether, "pending mismatch");
     }

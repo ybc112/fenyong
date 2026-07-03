@@ -118,7 +118,7 @@ export default function ReferralPage({
         {[
           { label: t('cz.referral.myRank'), value: userInfo?.rank ? `#${userInfo.rank}` : '-', suffix: '', icon: <FiAward /> },
           { label: t('cz.referral.directInvites'), value: userInfo?.directReferrals || 0, suffix: t('cz.common.person'), icon: <FiUserPlus /> },
-          { label: t('cz.referral.referralVolume'), value: userInfo?.referralStakeVolume || 0, suffix: 'CZ', icon: <FiUsers /> },
+          { label: t('cz.referral.referralVolume'), value: userInfo?.referralStakeVolume || 0, suffix: 'U', icon: <FiUsers /> },
           { label: t('cz.referral.pendingRewards'), value: userInfo?.pendingRewards || 0, suffix: 'CZ', icon: <FiGift /> },
         ].map((stat) => (
           <div key={stat.label} className="stat-card-premium">

@@ -25,6 +25,7 @@ contract NBTStakingBank {
 
     struct StakeRecord {
         uint256 amount;
+        uint256 scoreValue;
         uint256 startTime;
         bool active;
     }
@@ -55,6 +56,7 @@ contract NBTStakingBank {
     uint256 public totalInviteRewardsClaimed;
     uint256 public interactionFee;
     uint256 public inviteReward;
+    uint256 public stakeValueRate;
     uint256 public startTime;
     uint256 public currentEpochId;
     bool public paused;
@@ -87,6 +89,7 @@ contract NBTStakingBank {
     event InteractionFeePaid(address indexed user, address indexed token, uint256 totalFee, address receiverA, address receiverB);
     event InteractionFeeConfigUpdated(address indexed feeToken, uint256 fee, address indexed receiverA, address indexed receiverB);
     event InviteRewardUpdated(uint256 reward);
+    event StakeValueRateUpdated(uint256 rate);
     event OperatorUpdated(address indexed operator, bool status);
     event Paused();
     event Unpaused();
@@ -142,6 +145,7 @@ contract NBTStakingBank {
         feeReceiverB = feeReceiverB_;
         interactionFee = interactionFee_;
         inviteReward = DEFAULT_INVITE_REWARD;
+        stakeValueRate = 1 ether;
         owner = msg.sender;
         startTime = block.timestamp;
 
@@ -168,8 +172,10 @@ contract NBTStakingBank {
         require(received > 0, "No tokens received");
 
         uint256 stakeId = user.stakeCount;
+        uint256 scoreValue = _stakeValue(received);
         stakeRecords[msg.sender][stakeId] = StakeRecord({
             amount: received,
+            scoreValue: scoreValue,
             startTime: block.timestamp,
             active: true
         });
@@ -182,7 +188,7 @@ contract NBTStakingBank {
         address boundReferrer = user.referrer;
         if (boundReferrer != address(0)) {
             _qualifyReferral(boundReferrer, msg.sender);
-            _increaseNodeScore(boundReferrer, received);
+            _increaseNodeScore(boundReferrer, scoreValue);
         }
 
         emit Deposit(msg.sender, boundReferrer, stakeId, received);
@@ -195,8 +201,10 @@ contract NBTStakingBank {
         _collectInteractionFee(msg.sender);
 
         uint256 amount = record.amount;
+        uint256 scoreValue = record.scoreValue;
         record.active = false;
         record.amount = 0;
+        record.scoreValue = 0;
 
         UserInfo storage user = userInfo[msg.sender];
         user.activeStakeCount -= 1;
@@ -204,7 +212,7 @@ contract NBTStakingBank {
         totalStaked -= amount;
 
         if (user.referrer != address(0)) {
-            _decreaseNodeScore(user.referrer, amount);
+            _decreaseNodeScore(user.referrer, scoreValue);
         }
 
         _safeTransfer(stakingToken, msg.sender, amount);
@@ -304,6 +312,12 @@ contract NBTStakingBank {
         emit InviteRewardUpdated(reward);
     }
 
+    function setStakeValueRate(uint256 rate) external onlyOwner {
+        require(rate > 0, "Invalid rate");
+        stakeValueRate = rate;
+        emit StakeValueRateUpdated(rate);
+    }
+
     function setOperator(address operator, bool status) external onlyOwner {
         require(operator != address(0), "Invalid address");
         require(operator != owner, "Owner is super admin");
@@ -362,12 +376,14 @@ contract NBTStakingBank {
     function getUserStakes(address user) external view returns (
         uint256[] memory stakeIds,
         uint256[] memory amounts,
+        uint256[] memory scoreValues,
         uint256[] memory startTimes,
         bool[] memory actives
     ) {
         uint256 count = userInfo[user].stakeCount;
         stakeIds = new uint256[](count);
         amounts = new uint256[](count);
+        scoreValues = new uint256[](count);
         startTimes = new uint256[](count);
         actives = new bool[](count);
 
@@ -375,6 +391,7 @@ contract NBTStakingBank {
             StakeRecord memory record = stakeRecords[user][i];
             stakeIds[i] = i;
             amounts[i] = record.amount;
+            scoreValues[i] = record.scoreValue;
             startTimes[i] = record.startTime;
             actives[i] = record.active;
         }
@@ -382,11 +399,12 @@ contract NBTStakingBank {
 
     function getStakeRecord(address user, uint256 stakeId) external view returns (
         uint256 amount,
+        uint256 scoreValue,
         uint256 stakeStartTime,
         bool active
     ) {
         StakeRecord memory record = stakeRecords[user][stakeId];
-        return (record.amount, record.startTime, record.active);
+        return (record.amount, record.scoreValue, record.startTime, record.active);
     }
 
     function pendingRewardAll(address user) public view returns (uint256) {
@@ -528,6 +546,10 @@ contract NBTStakingBank {
         uint256 current = userInfo[node].referralStakeVolume;
         userInfo[node].referralStakeVolume = amount >= current ? 0 : current - amount;
         _updateNodePosition(node);
+    }
+
+    function _stakeValue(uint256 amount) internal view returns (uint256) {
+        return amount * stakeValueRate / 1 ether;
     }
 
     function _updateNodePosition(address node) internal {

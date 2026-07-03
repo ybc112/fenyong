@@ -9,10 +9,10 @@ services:
       - key: VITE_CHAIN_ID
         value: 0x61
       - key: VITE_NBT_TOKEN
-        value: 0x26326032Ce9198311DD0E659965E496f035fAc23
+        value: 0x99fbDdb26bc6b10DC9df80d6c6D943812047f406
       - key: VITE_STAKING_BANK
-        value: 0xd09cB15301f590Bc66993f4915d7386ac65fAfB9
+        value: 0x754767c9C0116caA5A4BDD07Acc3411498C7078a
       - key: VITE_NBT_PAIR
         value: ""
       - key: VITE_FEE_TOKEN
-        value: 0x26326032Ce9198311DD0E659965E496f035fAc23
+        value: 0x99fbDdb26bc6b10DC9df80d6c6D943812047f406

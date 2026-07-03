@@ -71,6 +71,7 @@ export function useStakingBank(contract, account) {
     rankedNodesTotal: 0,
     currentRelease: null,
     interactionFeeConfig: null,
+    stakeValueRate: '1',
     isPaused: false,
     loading: true,
   });
@@ -87,6 +88,7 @@ export function useStakingBank(contract, account) {
         isPaused,
         currentRelease,
         interactionFeeConfig,
+        stakeValueRate,
         rankedData,
       ] = await retryCall(() =>
         Promise.all([
@@ -94,6 +96,7 @@ export function useStakingBank(contract, account) {
           contract.paused ? contract.paused().catch(() => false) : Promise.resolve(false),
           contract.getCurrentRelease().catch(() => null),
           contract.getInteractionFeeConfig().catch(() => null),
+          contract.stakeValueRate().catch(() => ethers.parseEther('1')),
           contract.getRankedNodes(0, 100).catch(() => ({ nodes: [], scores: [], total: 0n })),
         ])
       );
@@ -113,6 +116,7 @@ export function useStakingBank(contract, account) {
           stakes = userStakes.stakeIds.map((id, index) => ({
             stakeId: Number(id),
             amount: ethers.formatEther(userStakes.amounts[index]),
+            scoreValue: ethers.formatEther(userStakes.scoreValues?.[index] ?? 0n),
             startTime: Number(userStakes.startTimes[index]),
             active: userStakes.actives[index],
           })).filter(stake => stake.active);
@@ -183,6 +187,7 @@ export function useStakingBank(contract, account) {
           receiverA: interactionFeeConfig.receiverA ?? interactionFeeConfig[2],
           receiverB: interactionFeeConfig.receiverB ?? interactionFeeConfig[3],
         } : null,
+        stakeValueRate: ethers.formatEther(stakeValueRate),
         isPaused,
         loading: false,
       });

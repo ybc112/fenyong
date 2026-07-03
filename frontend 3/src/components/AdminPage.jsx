@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import { FiAward, FiPause, FiPlay, FiSettings, FiShield, FiUploadCloud } from 'react-icons/fi';
-import { CONTRACTS, formatAddress, formatNumber, parseContractError } from '../utils/constants';
+import { formatAddress, formatNumber, parseContractError } from '../utils/constants';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function AdminPage({ account, contracts, stakingData, onRefresh }) {
@@ -10,18 +10,12 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
   const [releaseAmount, setReleaseAmount] = useState('');
   const [allocateCount, setAllocateCount] = useState('100');
   const [inviteReward, setInviteReward] = useState('');
-  const [feeConfig, setFeeConfig] = useState({
-    feeToken: CONTRACTS.FEE_TOKEN,
-    fee: '0.4',
-    receiverA: '0xfd682CbCb678ce5D273Eb778B946F6a4d8f1e8Ed',
-    receiverB: '0x5A378b61193ac2ce07cE816893C080804504a2f0',
-  });
+  const [stakeValueRate, setStakeValueRate] = useState('');
   const [isWorking, setIsWorking] = useState(false);
 
   const owner = null;
   const isReady = account && contracts?.writeStakingBank;
   const currentRelease = stakingData?.currentRelease;
-  const fee = stakingData?.interactionFeeConfig;
 
   const approveRewardToken = async () => {
     if (!contracts?.writeNbtToken || !CONTRACTS.STAKING_BANK || !releaseAmount) return;
@@ -72,23 +66,15 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
     }
   };
 
-  const updateFeeConfig = async () => {
-    if (!isReady) return;
-    if (!ethers.isAddress(feeConfig.feeToken) || !ethers.isAddress(feeConfig.receiverA) || !ethers.isAddress(feeConfig.receiverB)) {
-      toast.error(t('cz.toast.invalidAddress'));
-      return;
-    }
+  const updateStakeValueRate = async () => {
+    if (!isReady || stakeValueRate === '') return;
     setIsWorking(true);
     try {
-      const tx = await contracts.writeStakingBank.setInteractionFeeConfig(
-        feeConfig.feeToken,
-        ethers.parseEther(feeConfig.fee || '0'),
-        feeConfig.receiverA,
-        feeConfig.receiverB,
-      );
+      const tx = await contracts.writeStakingBank.setStakeValueRate(ethers.parseEther(stakeValueRate));
       toast.loading(t('cz.toast.updateFee'), { id: 'feeConfig' });
       await tx.wait();
       toast.success(t('cz.toast.updateFeeSuccess'), { id: 'feeConfig' });
+      setStakeValueRate('');
       onRefresh?.();
     } catch (err) {
       toast.error(parseContractError(err), { id: 'feeConfig' });
@@ -194,16 +180,12 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
             {t('cz.admin.settings')}
           </h2>
           <div className="space-y-3">
-            <input className="input-premium font-mono text-sm" value={feeConfig.feeToken} onChange={(e) => setFeeConfig(prev => ({ ...prev, feeToken: e.target.value }))} placeholder={t('cz.admin.feeTokenPlaceholder')} />
-            <input className="input-premium" value={feeConfig.fee} onChange={(e) => setFeeConfig(prev => ({ ...prev, fee: e.target.value }))} placeholder={t('cz.admin.feePlaceholder')} />
-            <input className="input-premium font-mono text-sm" value={feeConfig.receiverA} onChange={(e) => setFeeConfig(prev => ({ ...prev, receiverA: e.target.value }))} placeholder={t('cz.admin.receiverAPlaceholder')} />
-            <input className="input-premium font-mono text-sm" value={feeConfig.receiverB} onChange={(e) => setFeeConfig(prev => ({ ...prev, receiverB: e.target.value }))} placeholder={t('cz.admin.receiverBPlaceholder')} />
-            <button onClick={updateFeeConfig} disabled={isWorking} className="w-full btn-premium disabled:opacity-50"><span>{t('cz.admin.saveFee')}</span></button>
+            <input className="input-premium" value={stakeValueRate} onChange={(e) => setStakeValueRate(e.target.value)} placeholder={t('cz.admin.stakeValueRatePlaceholder')} />
+            <button onClick={updateStakeValueRate} disabled={isWorking || stakeValueRate === ''} className="w-full btn-premium disabled:opacity-50"><span>{t('cz.admin.saveStakeValueRate')}</span></button>
           </div>
 
           <div className="mt-5 p-4 rounded-xl bg-white/5 border border-white/10 text-sm text-white/55">
-            {t('cz.admin.currentFee')}: {formatNumber(fee?.fee || 0, 4)} U,
-            A {formatAddress(fee?.receiverA)}，B {formatAddress(fee?.receiverB)}
+            {t('cz.admin.currentStakeValueRate')}: {formatNumber(stakingData?.stakeValueRate || 1, 4)} U / CZ
           </div>
 
           <div className="mt-5 grid sm:grid-cols-[1fr_auto] gap-3">

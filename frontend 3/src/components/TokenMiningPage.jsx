@@ -48,8 +48,7 @@ export default function TokenMiningPage({
 
   const userInfo = stakingData?.userInfo;
   const miningStatus = stakingData?.miningStatus;
-  const feeConfig = stakingData?.interactionFeeConfig;
-  const feeAmount = feeConfig?.fee || '0.4';
+  const feeAmount = stakingData?.interactionFeeConfig?.fee || '0.4';
   const hasReferrer = userInfo?.referrer && userInfo.referrer !== ZERO;
   const needsStakeApproval = parseFloat(stakingAllowance || '0') < parseFloat(stakeAmount || '0');
   const needsFeeApproval = parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
@@ -252,11 +251,7 @@ export default function TokenMiningPage({
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div className="p-3 rounded-xl bg-white/5 border border-white/5">
-                <div className="text-white/40">{t('cz.node.interactionFee')}</div>
-                <div className="text-white font-semibold">{formatNumber(feeAmount, 4)} U</div>
-              </div>
+            <div className="grid grid-cols-1 gap-3 text-sm">
               <div className="p-3 rounded-xl bg-white/5 border border-white/5">
                 <div className="text-white/40">{t('cz.node.inviteStakeReward')}</div>
                 <div className="text-[#00D9A5] font-semibold">1 CZ / {t('cz.common.person')}</div>
@@ -316,7 +311,7 @@ export default function TokenMiningPage({
             <div className="grid grid-cols-2 gap-4 mb-5">
               <div className="p-4 rounded-xl bg-white/5 border border-white/5">
                 <div className="text-white/45 text-sm">{t('cz.node.referralVolume')}</div>
-                <div className="text-2xl font-bold text-white">{formatNumber(userInfo?.referralStakeVolume, 4)} CZ</div>
+                <div className="text-2xl font-bold text-white">{formatNumber(userInfo?.referralStakeVolume, 4)} U</div>
               </div>
               <div className="p-4 rounded-xl bg-white/5 border border-white/5">
                 <div className="text-white/45 text-sm">{t('cz.node.directInvites')}</div>
@@ -360,7 +355,7 @@ export default function TokenMiningPage({
                     <span className="font-mono text-white/75 truncate">{formatAddress(node.address)}</span>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-semibold text-white">{formatNumber(node.score, 4)} CZ</div>
+                    <div className="text-sm font-semibold text-white">{formatNumber(node.score, 4)} U</div>
                     <div className="text-xs text-white/35">{t('cz.node.referralVolume')}</div>
                   </div>
                 </div>
@@ -384,7 +379,7 @@ export default function TokenMiningPage({
                 <div key={stake.stakeId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-white/5 border border-white/10">
                   <div>
                     <div className="text-white font-semibold">#{stake.stakeId} · {formatNumber(stake.amount, 4)} CZ</div>
-                    <div className="text-xs text-white/35 mt-1">{t('cz.node.startTime')} {new Date(stake.startTime * 1000).toLocaleString()}</div>
+                    <div className="text-xs text-white/35 mt-1">{t('cz.node.stakeValue')} {formatNumber(stake.scoreValue, 4)} U · {t('cz.node.startTime')} {new Date(stake.startTime * 1000).toLocaleString()}</div>
                   </div>
                   <button
                     onClick={() => needsFeeApproval ? approveFeeToken() : handleWithdraw(stake.stakeId)}
