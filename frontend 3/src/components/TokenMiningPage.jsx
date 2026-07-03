@@ -55,8 +55,7 @@ export default function TokenMiningPage({
   const needsFeeApproval = parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
   const pendingRewardsAmount = userInfo?.pendingRewards || '0';
   const pendingRewardsNumber = parseFloat(pendingRewardsAmount || '0');
-  const needsCompoundFeeApproval = parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0') * 2;
-  const needsCompoundStakeApproval = parseFloat(stakingAllowance || '0') < pendingRewardsNumber;
+  const needsCompoundFeeApproval = parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
   const canCompoundRewards = !stakingData?.stakingTokenAddress
     || !stakingData?.rewardTokenAddress
     || stakingData.stakingTokenAddress.toLowerCase() === stakingData.rewardTokenAddress.toLowerCase();
@@ -163,15 +162,9 @@ export default function TokenMiningPage({
 
     setIsCompounding(true);
     try {
-      const compoundAmount = ethers.parseEther(pendingRewardsAmount);
-
-      toast.loading(t('cz.toast.compoundClaim'), { id: 'compound' });
-      const claimTx = await contracts.writeStakingBank.claimNodeRewards();
-      await claimTx.wait();
-
       toast.loading(t('cz.toast.compoundStake'), { id: 'compound' });
-      const stakeTx = await contracts.writeStakingBank.stake(compoundAmount, selectedReferrer);
-      await stakeTx.wait();
+      const tx = await contracts.writeStakingBank.compoundNodeRewards(selectedReferrer);
+      await tx.wait();
 
       toast.success(t('cz.toast.compoundSuccess'), { id: 'compound' });
       onRefresh?.();
@@ -185,10 +178,6 @@ export default function TokenMiningPage({
   const handleCompoundAction = async () => {
     if (needsCompoundFeeApproval) {
       await approveFeeToken();
-      return;
-    }
-    if (needsCompoundStakeApproval) {
-      await approveStakeToken();
       return;
     }
     await handleCompound();
@@ -338,7 +327,7 @@ export default function TokenMiningPage({
               disabled={!account || isApprovingFee || isApprovingStake || isCompounding || isClaiming || isStaking || activeRelease || !(pendingRewardsNumber > 0) || !canCompoundRewards}
               className="w-full btn-ghost border-[#FFB800]/50 bg-[#FFB800]/10 text-[#FFB800] hover:border-[#FFB800] hover:bg-[#FFB800]/20 hover:shadow-[0_0_30px_rgba(255,184,0,0.18)] disabled:opacity-50"
             >
-              {!canCompoundRewards ? t('cz.node.compoundUnavailable') : activeRelease ? t('cz.node.monthlyAllocating') : isCompounding ? t('cz.node.compounding') : !(pendingRewardsNumber > 0) ? t('cz.node.compoundRewards') : needsCompoundFeeApproval ? t('cz.node.approveFeeFirst') : needsCompoundStakeApproval ? t('cz.node.approveCompound') : `${t('cz.node.compoundRewards')} ${formatNumber(pendingRewardsAmount, 4)} CZ`}
+              {!canCompoundRewards ? t('cz.node.compoundUnavailable') : activeRelease ? t('cz.node.monthlyAllocating') : isCompounding ? t('cz.node.compounding') : !(pendingRewardsNumber > 0) ? t('cz.node.compoundRewards') : needsCompoundFeeApproval ? t('cz.node.approveFeeFirst') : `${t('cz.node.compoundRewards')} ${formatNumber(pendingRewardsAmount, 4)} CZ`}
             </button>
           </div>
         </motion.div>

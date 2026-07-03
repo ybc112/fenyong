@@ -157,6 +157,24 @@ async function main() {
   assertBigEqual(previews.rank101, ether("25"), "rank 101 preview");
   assertBigEqual(previews.rank120, ether("25"), "rank 120 preview");
 
+  await owner.sendTransaction({ to: nodes[1].address, value: ether("1") });
+  await usdt.transfer(nodes[1].address, ether("1"));
+  await usdt.connect(nodes[1]).approve(await bank.getAddress(), ether("1"));
+  const beforeCompoundFeeA = await usdt.balanceOf(FEE_A);
+  const beforeCompoundFeeB = await usdt.balanceOf(FEE_B);
+  const beforeCompoundTotalStaked = await bank.totalStaked();
+  const beforeCompoundInfo = await bank.getUserInfo(nodes[1].address);
+  const compoundAmount = beforeCompoundInfo.pendingRewards;
+  await bank.connect(nodes[1]).compoundNodeRewards(ethers.ZeroAddress);
+  const afterCompoundInfo = await bank.getUserInfo(nodes[1].address);
+  assertBigEqual(afterCompoundInfo.pendingRewards, 0n, "compound clears pending rewards");
+  assertBigEqual(afterCompoundInfo.totalClaimed - beforeCompoundInfo.totalClaimed, compoundAmount, "compound claimed accounting");
+  assertBigEqual(afterCompoundInfo.info.totalStaked, compoundAmount, "compound creates stake");
+  assertEqual(Number(afterCompoundInfo.info.activeStakeCount), 1, "compound active stake count");
+  assertBigEqual((await bank.totalStaked()) - beforeCompoundTotalStaked, compoundAmount, "compound increases total staked");
+  assertBigEqual((await usdt.balanceOf(FEE_A)) - beforeCompoundFeeA, ether("0.2"), "compound fee A");
+  assertBigEqual((await usdt.balanceOf(FEE_B)) - beforeCompoundFeeB, ether("0.2"), "compound fee B");
+
   console.log(JSON.stringify({
     result: "PASS",
     tokenRequirement: CZ_MAINNET,
@@ -169,6 +187,7 @@ async function main() {
     feeReceiverBAfter120Stakes: fmt(feeBBalance),
     monthlyRelease: fmt(release),
     allocatedAmount: fmt(releaseState.allocatedAmount),
+    compoundAmount: fmt(compoundAmount),
     actualPools: {
       top10: fmt(top10),
       rank11To50: fmt(rank11To50),

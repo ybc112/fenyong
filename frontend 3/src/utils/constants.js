@@ -95,6 +95,7 @@ export const CONTRACT_ERRORS = {
   'No pending rewards': '暂无待领取收益',
   'No referral rewards': '暂无推荐奖励',
   'No rewards': '暂无可领取奖励',
+  'Compound token mismatch': '当前奖励币不能直接复投',
   'Monthly release in progress': '月度释放分配中，暂时不能改变排名',
   'Insufficient invite reward reserve': '邀请奖励储备不足，请联系项目方补充奖励',
   'Referrer mismatch': '推荐人与已绑定地址不一致',

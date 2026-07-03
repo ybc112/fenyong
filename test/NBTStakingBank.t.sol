@@ -16,6 +16,10 @@ contract NodeUser {
     function claim(NBTStakingBank bank) external {
         bank.claimNodeRewards();
     }
+
+    function compound(NBTStakingBank bank, address referrer) external {
+        bank.compoundNodeRewards(referrer);
+    }
 }
 
 contract NBTStakingBankTest {
@@ -97,5 +101,42 @@ contract NBTStakingBankTest {
         inviter.approve(token, address(bank), 0.4 ether);
         inviter.claim(bank);
         require(token.balanceOf(address(inviter)) == 101 ether, "claim mismatch");
+    }
+
+    function testCompoundNodeRewardsCreatesNewStakeWithOneFee() external {
+        NBTToken token = _newToken(1_000_000 ether);
+        NBTStakingBank bank = _newBank(token);
+        NodeUser staker = new NodeUser();
+        NodeUser inviter = new NodeUser();
+
+        token.transfer(address(bank), 10 ether);
+        token.transfer(address(staker), 100.4 ether);
+        staker.approve(token, address(bank), 100.4 ether);
+        staker.stake(bank, 100 ether, address(inviter));
+
+        token.transfer(address(inviter), 0.4 ether);
+        inviter.approve(token, address(bank), 0.4 ether);
+        inviter.compound(bank, address(0));
+
+        (
+            NBTStakingBank.UserInfo memory info,
+            uint256 pendingRewards,
+            uint256 totalClaimed,
+            uint256 rank
+        ) = bank.getUserInfo(address(inviter));
+
+        require(rank == 1, "rank mismatch");
+        require(info.pendingInviteRewards == 0, "pending invite mismatch");
+        require(pendingRewards == 0, "pending mismatch");
+        require(totalClaimed == 1 ether, "claimed mismatch");
+        require(info.activeStakeCount == 1, "active stake mismatch");
+        require(info.totalStaked == 1 ether, "compounded stake mismatch");
+        require(bank.totalStaked() == 101 ether, "total staked mismatch");
+
+        (uint256 amount, uint256 scoreValue,, bool active) = bank.getStakeRecord(address(inviter), 0);
+        require(active, "compound stake inactive");
+        require(amount == 1 ether, "compound amount mismatch");
+        require(scoreValue == 1 ether, "compound score mismatch");
+        require(token.balanceOf(address(inviter)) == 0, "fee should be paid once");
     }
 }

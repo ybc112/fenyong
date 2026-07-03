@@ -6,6 +6,7 @@
   "scripts": {
     "build:contracts": "hardhat compile",
     "deploy:testnet": "hardhat run scripts/deploy-hardhat.cjs --network bscTestnet",
+    "deploy:upgrade:testnet": "node scripts/deploy-upgraded-staking-testnet.mjs",
     "deploy:mainnet": "hardhat run scripts/deploy-hardhat.cjs --network bscMainnet",
     "verify:testnet": "hardhat verify --network bscTestnet",
     "verify:mainnet": "hardhat verify --network bscMainnet",

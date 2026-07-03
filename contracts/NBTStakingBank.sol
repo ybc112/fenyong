@@ -83,6 +83,7 @@ contract NBTStakingBank {
     event ReferralQualified(address indexed referrer, address indexed user, uint256 inviteReward);
     event NodeScoreUpdated(address indexed node, uint256 score, uint256 rank);
     event NodeRewardsClaimed(address indexed user, uint256 inviteReward, uint256 rankReward);
+    event NodeRewardsCompounded(address indexed user, uint256 indexed stakeId, uint256 amount);
     event MonthlyReleaseOpened(uint256 indexed epochId, uint256 amount, uint256 totalNodes);
     event RankRewardAllocated(uint256 indexed epochId, address indexed node, uint256 rank, uint256 amount);
     event MonthlyReleaseFinalized(uint256 indexed epochId, uint256 amount);
@@ -235,6 +236,57 @@ contract NBTStakingBank {
 
     function claimAll() external {
         claimNodeRewards();
+    }
+
+    function compoundNodeRewards(address referrer) external nonReentrant whenNotPaused noActiveRelease {
+        require(address(stakingToken) == address(rewardToken), "Compound token mismatch");
+
+        UserInfo storage user = userInfo[msg.sender];
+        require(user.activeStakeCount < MAX_ACTIVE_STAKES, "Too many active stakes");
+
+        if (user.referrer == address(0) && referrer != address(0)) {
+            _setReferrer(msg.sender, referrer);
+        } else if (referrer != address(0) && referrer != user.referrer) {
+            revert("Referrer mismatch");
+        }
+
+        _collectInteractionFee(msg.sender);
+
+        uint256 inviteAmount = user.pendingInviteRewards;
+        uint256 rankAmount = user.pendingRankRewards;
+        uint256 amount = inviteAmount + rankAmount;
+        require(amount > 0, "No rewards");
+
+        user.pendingInviteRewards = 0;
+        user.pendingRankRewards = 0;
+        user.totalInviteClaimed += inviteAmount;
+        user.totalRankClaimed += rankAmount;
+        totalInviteRewardsClaimed += inviteAmount;
+        totalRankClaimed += rankAmount;
+
+        uint256 stakeId = user.stakeCount;
+        uint256 scoreValue = _stakeValue(amount);
+        stakeRecords[msg.sender][stakeId] = StakeRecord({
+            amount: amount,
+            scoreValue: scoreValue,
+            startTime: block.timestamp,
+            active: true
+        });
+
+        user.stakeCount += 1;
+        user.activeStakeCount += 1;
+        user.totalStaked += amount;
+        totalStaked += amount;
+
+        address boundReferrer = user.referrer;
+        if (boundReferrer != address(0)) {
+            _qualifyReferral(boundReferrer, msg.sender);
+            _increaseNodeScore(boundReferrer, scoreValue);
+        }
+
+        emit NodeRewardsClaimed(msg.sender, inviteAmount, rankAmount);
+        emit Deposit(msg.sender, boundReferrer, stakeId, amount);
+        emit NodeRewardsCompounded(msg.sender, stakeId, amount);
     }
 
     function openMonthlyRelease(uint256 amount) external onlyAdmin nonReentrant whenNotPaused {
