@@ -58,6 +58,14 @@ export default function HomePage({ onPageChange, stakingData }) {
             <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => onPageChange('referral')} className="btn-ghost">
               <span className="flex items-center gap-2"><FiUsers className="w-5 h-5" /> {t('cz.home.inviteFriends')}</span>
             </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => onPageChange('token-mining')}
+              className="btn-ghost border-[#FFB800]/50 bg-[#FFB800]/10 text-[#FFB800] hover:border-[#FFB800] hover:bg-[#FFB800]/20 hover:shadow-[0_0_30px_rgba(255,184,0,0.18)]"
+            >
+              <span className="flex items-center gap-2"><FiZap className="w-5 h-5" /> {t('cz.home.goStake')}</span>
+            </motion.button>
           </div>
         </motion.div>
       </section>
