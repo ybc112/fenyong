@@ -42,6 +42,7 @@ export default function TokenMiningPage({
   const [isApprovingStake, setIsApprovingStake] = useState(false);
   const [isApprovingFee, setIsApprovingFee] = useState(false);
   const [isStaking, setIsStaking] = useState(false);
+  const [isCompounding, setIsCompounding] = useState(false);
   const [withdrawingStakeId, setWithdrawingStakeId] = useState(null);
   const [isClaiming, setIsClaiming] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -52,6 +53,13 @@ export default function TokenMiningPage({
   const hasReferrer = userInfo?.referrer && userInfo.referrer !== ZERO;
   const needsStakeApproval = parseFloat(stakingAllowance || '0') < parseFloat(stakeAmount || '0');
   const needsFeeApproval = parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
+  const pendingRewardsAmount = userInfo?.pendingRewards || '0';
+  const pendingRewardsNumber = parseFloat(pendingRewardsAmount || '0');
+  const needsCompoundFeeApproval = parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0') * 2;
+  const needsCompoundStakeApproval = parseFloat(stakingAllowance || '0') < pendingRewardsNumber;
+  const canCompoundRewards = !stakingData?.stakingTokenAddress
+    || !stakingData?.rewardTokenAddress
+    || stakingData.stakingTokenAddress.toLowerCase() === stakingData.rewardTokenAddress.toLowerCase();
   const activeRelease = miningStatus?.releaseInProgress;
 
   const rankBands = [
@@ -135,6 +143,55 @@ export default function TokenMiningPage({
     } finally {
       setIsStaking(false);
     }
+  };
+
+  const handleCompound = async () => {
+    if (!contracts?.writeStakingBank) return;
+    if (!(await ensureNetwork())) return;
+    if (!canCompoundRewards) {
+      toast.error(t('cz.toast.compoundUnavailable'));
+      return;
+    }
+    if (activeRelease) {
+      toast.error(parseContractError({ reason: 'Monthly release in progress' }));
+      return;
+    }
+    if (isNaN(pendingRewardsNumber) || pendingRewardsNumber <= 0) {
+      toast.error(t('cz.toast.noRewardsToCompound'));
+      return;
+    }
+
+    setIsCompounding(true);
+    try {
+      const compoundAmount = ethers.parseEther(pendingRewardsAmount);
+
+      toast.loading(t('cz.toast.compoundClaim'), { id: 'compound' });
+      const claimTx = await contracts.writeStakingBank.claimNodeRewards();
+      await claimTx.wait();
+
+      toast.loading(t('cz.toast.compoundStake'), { id: 'compound' });
+      const stakeTx = await contracts.writeStakingBank.stake(compoundAmount, selectedReferrer);
+      await stakeTx.wait();
+
+      toast.success(t('cz.toast.compoundSuccess'), { id: 'compound' });
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'compound' });
+    } finally {
+      setIsCompounding(false);
+    }
+  };
+
+  const handleCompoundAction = async () => {
+    if (needsCompoundFeeApproval) {
+      await approveFeeToken();
+      return;
+    }
+    if (needsCompoundStakeApproval) {
+      await approveStakeToken();
+      return;
+    }
+    await handleCompound();
   };
 
   const handleWithdraw = async (stakeId) => {
@@ -269,12 +326,20 @@ export default function TokenMiningPage({
             ) : (
               <button
                 onClick={handleStake}
-                disabled={isStaking || !account || !stakeAmount || activeRelease}
+                disabled={isStaking || isCompounding || !account || !stakeAmount || activeRelease}
                 className="w-full btn-premium disabled:opacity-50"
               >
                 <span>{activeRelease ? t('cz.node.monthlyAllocating') : isStaking ? t('cz.toast.staking') : t('cz.node.confirmStake')}</span>
               </button>
             )}
+
+            <button
+              onClick={handleCompoundAction}
+              disabled={!account || isApprovingFee || isApprovingStake || isCompounding || isClaiming || isStaking || activeRelease || !(pendingRewardsNumber > 0) || !canCompoundRewards}
+              className="w-full btn-ghost border-[#FFB800]/50 bg-[#FFB800]/10 text-[#FFB800] hover:border-[#FFB800] hover:bg-[#FFB800]/20 hover:shadow-[0_0_30px_rgba(255,184,0,0.18)] disabled:opacity-50"
+            >
+              {!canCompoundRewards ? t('cz.node.compoundUnavailable') : activeRelease ? t('cz.node.monthlyAllocating') : isCompounding ? t('cz.node.compounding') : !(pendingRewardsNumber > 0) ? t('cz.node.compoundRewards') : needsCompoundFeeApproval ? t('cz.node.approveFeeFirst') : needsCompoundStakeApproval ? t('cz.node.approveCompound') : `${t('cz.node.compoundRewards')} ${formatNumber(pendingRewardsAmount, 4)} CZ`}
+            </button>
           </div>
         </motion.div>
       </section>
@@ -329,7 +394,7 @@ export default function TokenMiningPage({
 
             <button
               onClick={needsFeeApproval ? approveFeeToken : handleClaim}
-              disabled={!account || isClaiming || (!needsFeeApproval && parseFloat(userInfo?.pendingRewards || '0') <= 0)}
+              disabled={!account || isClaiming || isCompounding || (!needsFeeApproval && !(pendingRewardsNumber > 0))}
               className="w-full btn-premium disabled:opacity-50"
             >
               <span>{needsFeeApproval ? t('cz.node.approveFeeFirst') : isClaiming ? t('cz.node.claiming') : t('cz.node.claimAll')}</span>
