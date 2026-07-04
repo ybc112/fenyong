@@ -101,11 +101,11 @@ export const formatEther = (value, decimals = 4) => {
 };
 
 export const CONTRACT_ERRORS = {
-  'Already has referrer': '您已设置过推荐人，无法更改',
-  'Cannot refer self': '不能将自己设为推荐人',
+  'Already has referrer': '您已经设置过推荐人，无法更改',
+  'Cannot refer self': '不能将自己设置为推荐人',
   'Circular referral not allowed': '不允许循环推荐',
   'Invalid referrer': '无效的推荐人',
-  'Invalid tier': '无效的锁仓档位',
+  'Invalid tier': '无效的质押档位',
   'Stake not found': '质押记录不存在',
   'Stake already withdrawn': '该质押已提取',
   'Lock period not ended': '锁仓期未结束',
@@ -114,30 +114,68 @@ export const CONTRACT_ERRORS = {
   'No rewards': '暂无可领取奖励',
   'Compound token mismatch': '当前奖励币不能直接复投',
   'Monthly release in progress': '月度释放分配中，暂时不能改变排名',
-  'Insufficient invite reward reserve': '邀请奖励储备不足，请联系项目方补充奖励',
+  'Insufficient invite reward reserve': '邀请奖励储备不足，请先给新版质押合约充值奖励',
   'Referrer mismatch': '推荐人与已绑定地址不一致',
   'Rewards depleted': '奖励池已耗尽',
   'Too many active stakes': '活跃质押数量已达上限',
   'Stake not active': '该质押记录已失效',
-  'Fee too high': '滑点设置过高',
+  'Fee too high': '费用设置过高',
   'Invalid address': '无效的地址',
   'Paused': '合约已暂停',
   'user rejected transaction': '您取消了交易',
   'insufficient funds': '钱包余额不足以支付 Gas 费',
   'execution reverted': '交易执行失败',
+  'could not coalesce error': '钱包返回异常，交易可能已经提交，请刷新页面或在钱包交易记录中确认',
+};
+
+const collectErrorText = (error, seen = new Set()) => {
+  if (!error) return [];
+  if (typeof error === 'string') return [error];
+  if (typeof error !== 'object') return [];
+  if (seen.has(error)) return [];
+  seen.add(error);
+
+  const output = [];
+  for (const key of ['reason', 'shortMessage', 'message', 'data', 'body', 'details']) {
+    const value = error[key];
+    if (typeof value === 'string') {
+      output.push(value);
+      if ((value.startsWith('{') && value.endsWith('}')) || (value.startsWith('[') && value.endsWith(']'))) {
+        try {
+          output.push(...collectErrorText(JSON.parse(value), seen));
+        } catch {
+          // Some wallets put plain text into body/data; keep the original text above.
+        }
+      }
+    }
+  }
+
+  for (const key of ['error', 'info', 'payload', 'cause']) {
+    output.push(...collectErrorText(error[key], seen));
+  }
+
+  if (Array.isArray(error.errors)) {
+    for (const nestedError of error.errors) {
+      output.push(...collectErrorText(nestedError, seen));
+    }
+  }
+
+  return output;
 };
 
 export const parseContractError = (error) => {
   if (!error) return '操作失败';
-  const reason = error.reason || error.shortMessage || error.message || '';
+
+  const reason = collectErrorText(error).join(' | ');
+  const normalizedReason = reason.toLowerCase();
 
   for (const [key, value] of Object.entries(CONTRACT_ERRORS)) {
-    if (reason.toLowerCase().includes(key.toLowerCase())) {
+    if (normalizedReason.includes(key.toLowerCase())) {
       return value;
     }
   }
 
-  if (reason.includes('user rejected') || reason.includes('denied')) {
+  if (normalizedReason.includes('user rejected') || normalizedReason.includes('denied')) {
     return '您取消了交易';
   }
 

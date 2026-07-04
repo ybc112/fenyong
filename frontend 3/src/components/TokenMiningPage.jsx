@@ -146,6 +146,7 @@ export default function TokenMiningPage({
       onRefresh?.();
     } catch (err) {
       toast.error(parseContractError(err), { id: 'stake' });
+      onRefresh?.();
     } finally {
       setIsStaking(false);
     }
