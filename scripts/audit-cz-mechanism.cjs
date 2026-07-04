@@ -5,6 +5,7 @@ const { ethers } = hre;
 const CZ_MAINNET = "0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04";
 const FEE_A = "0xfd682CbCb678ce5D273Eb778B946F6a4d8f1e8Ed";
 const FEE_B = "0x5A378b61193ac2ce07cE816893C080804504a2f0";
+const INVITE_REWARD_AMOUNT = "100000000";
 
 const ether = ethers.parseEther;
 const fmt = (value) => Number(ethers.formatEther(value));
@@ -39,8 +40,9 @@ async function deployToken(name, symbol, supply, owner) {
 
 async function main() {
   const [owner] = await ethers.getSigners();
+  const inviteReward = ether(INVITE_REWARD_AMOUNT);
 
-  const cz = await deployToken("Crypto Zenith", "CZ", "1000000000", owner);
+  const cz = await deployToken("Crypto Zenith", "CZ", "20000000000", owner);
   const usdt = await deployToken("Mock USDT", "USDT", "1000000000", owner);
 
   const Bank = await ethers.getContractFactory("NBTStakingBank");
@@ -53,14 +55,15 @@ async function main() {
     ether("0.4"),
   );
   await bank.waitForDeployment();
+  await bank.setInviteReward(inviteReward);
 
   assertEqual(await bank.owner(), owner.address, "owner");
   assertEqual(await bank.feeReceiverA(), FEE_A, "fee receiver A");
   assertEqual(await bank.feeReceiverB(), FEE_B, "fee receiver B");
   assertBigEqual(await bank.interactionFee(), ether("0.4"), "interaction fee");
-  assertBigEqual(await bank.inviteReward(), ether("1"), "invite reward");
+  assertBigEqual(await bank.inviteReward(), inviteReward, "invite reward");
 
-  const reserve = ether("1000");
+  const reserve = inviteReward * 120n + ether("100000");
   await cz.transfer(await bank.getAddress(), reserve);
 
   const stakers = [];
@@ -96,7 +99,7 @@ async function main() {
 
   const nodeAInfo = await bank.getUserInfo(nodes[0].address);
   assertEqual(Number(nodeAInfo.info.directReferrals), 1, "rank 1 qualified referrals");
-  assertBigEqual(nodeAInfo.info.pendingInviteRewards, ether("1"), "rank 1 invite rewards");
+  assertBigEqual(nodeAInfo.info.pendingInviteRewards, inviteReward, "rank 1 invite rewards");
 
   const release = ether("10000");
   await cz.approve(await bank.getAddress(), release);
@@ -181,7 +184,7 @@ async function main() {
     deployedLocalBank: await bank.getAddress(),
     feeReceiversInRequest: [FEE_A, FEE_B],
     interactionFee: "0.4",
-    inviteReward: "1",
+    inviteReward: INVITE_REWARD_AMOUNT,
     rankedNodeCount: Number(ranked.total),
     feeReceiverAAfter120Stakes: fmt(feeABalance),
     feeReceiverBAfter120Stakes: fmt(feeBBalance),

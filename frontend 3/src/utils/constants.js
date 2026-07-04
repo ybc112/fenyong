@@ -7,8 +7,7 @@ const TESTNET_CONTRACTS = {
 const OLD_MAINNET_TOKEN = '0xd0f2a86c7ebcee887f5bfb86771f994cd142bd04';
 
 const rawTokenAddress = import.meta.env.VITE_NBT_TOKEN || '';
-const hasStaleMainnetToken = rawTokenAddress.toLowerCase() === OLD_MAINNET_TOKEN;
-const configuredChainId = (hasStaleMainnetToken ? '0x61' : (import.meta.env.VITE_CHAIN_ID || '0x61')).toLowerCase();
+const configuredChainId = (import.meta.env.VITE_CHAIN_ID || '0x61').toLowerCase();
 const isTestnet = configuredChainId !== '0x38';
 
 const testnetSafeAddress = (value, fallback) => {

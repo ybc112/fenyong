@@ -7,12 +7,12 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_CHAIN_ID
-        value: 0x61
+        value: 0x38
       - key: VITE_NBT_TOKEN
-        value: 0x99fbDdb26bc6b10DC9df80d6c6D943812047f406
+        value: 0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04
       - key: VITE_STAKING_BANK
-        value: 0xB110ea48824383BAbeDE6ba7E19d5E01089De6cc
+        value: 0xFDfCA0C575ad1643cA2F7A044f104cF6fe77B6DA
       - key: VITE_NBT_PAIR
         value: ""
       - key: VITE_FEE_TOKEN
-        value: 0x99fbDdb26bc6b10DC9df80d6c6D943812047f406
+        value: 0x55d398326f99059fF775485246999027B3197955

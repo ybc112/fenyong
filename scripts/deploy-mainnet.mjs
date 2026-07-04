@@ -60,11 +60,62 @@ function writeFrontendEnv(filePath, values) {
   writeFileSync(filePath, envContent);
 }
 
+function updateRenderYaml(filePath, values) {
+  if (!existsSync(filePath)) return;
+  let content = readFileSync(filePath, 'utf8');
+  const replacements = {
+    VITE_CHAIN_ID: '0x38',
+    VITE_NBT_TOKEN: values.nbtToken,
+    VITE_STAKING_BANK: values.stakingBank,
+    VITE_NBT_PAIR: values.nbtPair || '""',
+    VITE_FEE_TOKEN: values.feeToken || '',
+  };
+
+  for (const [key, value] of Object.entries(replacements)) {
+    const pattern = new RegExp(`(key:\\s*${key}\\s*\\r?\\n\\s*value:\\s*)[^\\r\\n]*`, 'g');
+    content = content.replace(pattern, `$1${value}`);
+  }
+  writeFileSync(filePath, content);
+}
+
 function writeDeploymentJson(dirPath, payload) {
   mkdirSync(dirPath, { recursive: true });
   const filePath = path.join(dirPath, `bsc-mainnet-${payload.timestamp}.json`);
   writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`);
   return filePath;
+}
+
+function parseRpcUrls() {
+  const urls = [
+    ...optionalEnv('BSC_MAINNET_RPC_URLS', '').split(','),
+    optionalEnv('BSC_MAINNET_RPC_URL', ''),
+    'https://bsc-dataseed.binance.org/',
+    'https://bsc-dataseed1.binance.org/',
+    'https://bsc-dataseed2.binance.org/',
+    'https://bsc.publicnode.com',
+    'https://bsc.blockpi.network/v1/rpc/public',
+  ]
+    .map((url) => url.trim())
+    .filter(Boolean);
+
+  return [...new Set(urls)];
+}
+
+async function createMainnetProvider(urls) {
+  for (const url of urls) {
+    try {
+      const provider = new ethers.JsonRpcProvider(url);
+      const network = await provider.getNetwork();
+      if (Number(network.chainId) === 56) {
+        console.log(`Using RPC: ${url}`);
+        return provider;
+      }
+      console.warn(`Skipping RPC ${url}: expected chain id 56, got ${network.chainId}`);
+    } catch (error) {
+      console.warn(`Skipping RPC ${url}: ${error.shortMessage || error.message}`);
+    }
+  }
+  throw new Error('No available BSC Mainnet RPC endpoint.');
 }
 
 async function wait(tx, label) {
@@ -77,12 +128,13 @@ async function wait(tx, label) {
 async function main() {
   loadDotenv(path.join(rootDir, '.env.mainnet'));
 
-  const rpcUrl = optionalEnv('BSC_MAINNET_RPC_URL', 'https://bsc-dataseed.binance.org/');
+  const rpcUrls = parseRpcUrls();
   const privateKey = requireEnv('PRIVATE_KEY');
   const tokenName = optionalEnv('TOKEN_NAME', 'NBT');
   const tokenSymbol = optionalEnv('TOKEN_SYMBOL', 'NBT');
   const initialSupply = optionalEnv('INITIAL_SUPPLY', '200000000');
   const initialRewardFund = optionalEnv('INITIAL_REWARD_FUND', '0');
+  const inviteReward = optionalEnv('INVITE_REWARD', '100000000');
   const existingTokenAddress = optionalEnv('CZ_TOKEN_ADDRESS', '0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04');
   const feeTokenAddress = optionalEnv('FEE_TOKEN', '0x55d398326f99059fF775485246999027B3197955');
   const feeReceiverA = optionalEnv('FEE_RECEIVER_A', '0xfd682CbCb678ce5D273Eb778B946F6a4d8f1e8Ed');
@@ -94,7 +146,7 @@ async function main() {
   console.log('Building contracts with Hardhat...');
   execFileSync('npx', ['hardhat', 'compile'], { cwd: rootDir, stdio: 'inherit', shell: true });
 
-  const provider = new ethers.JsonRpcProvider(rpcUrl);
+  const provider = await createMainnetProvider(rpcUrls);
   const wallet = new ethers.Wallet(privateKey, provider);
   const network = await provider.getNetwork();
   if (Number(network.chainId) !== 56) {
@@ -129,6 +181,7 @@ async function main() {
   console.log(`Fee Receiver A: ${feeReceiverA}`);
   console.log(`Fee Receiver B: ${feeReceiverB}`);
   console.log(`Initial Reward Fund: ${initialRewardFund}`);
+  console.log(`Invite Reward: ${inviteReward}`);
   console.log('=======================================\n');
 
   console.log('\nDeploying NBTStakingBank...');
@@ -145,6 +198,12 @@ async function main() {
   const stakingBank = await staking.getAddress();
   console.log(`NBTStakingBank deployed: ${stakingBank}`);
 
+  const inviteRewardWei = ethers.parseEther(inviteReward);
+  if (inviteRewardWei !== ethers.parseEther('1')) {
+    console.log('\nSetting invite reward...');
+    await wait(await staking.setInviteReward(inviteRewardWei), 'Set invite reward');
+  }
+
   const rewardFundWei = ethers.parseEther(initialRewardFund);
   if (rewardFundWei > 0n) {
     console.log('\nTransferring initial invite reward reserve...');
@@ -152,6 +211,7 @@ async function main() {
   }
 
   writeFrontendEnv(frontendEnvPath, { nbtToken: existingTokenAddress, stakingBank, nbtPair, feeToken: feeTokenAddress });
+  updateRenderYaml(path.join(rootDir, 'render.yaml'), { nbtToken: existingTokenAddress, stakingBank, nbtPair, feeToken: feeTokenAddress });
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const deploymentPath = writeDeploymentJson(deploymentsDir, {
@@ -166,6 +226,7 @@ async function main() {
     interactionFee,
     feeReceiverA,
     feeReceiverB,
+    inviteReward,
     tokenName,
     tokenSymbol,
     initialSupply,
@@ -177,8 +238,10 @@ async function main() {
   console.log(`Network: BSC Mainnet`);
   console.log(`CZToken: ${existingTokenAddress}`);
   console.log(`StakingBank: ${stakingBank}`);
+  console.log(`InviteReward: ${inviteReward} CZ / person`);
   console.log(`Deployer: ${deployer}`);
   console.log(`Frontend env written: ${frontendEnvPath}`);
+  console.log(`Render config updated: ${path.join(rootDir, 'render.yaml')}`);
   console.log(`Deployment record: ${deploymentPath}`);
   console.log('\nIMPORTANT: Save these addresses! They cannot be changed.');
   console.log('=========================================\n');
