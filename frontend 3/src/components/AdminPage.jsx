@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
-import { FiAward, FiPause, FiPlay, FiSettings, FiShield, FiUploadCloud } from 'react-icons/fi';
-import { formatAddress, formatNumber, parseContractError } from '../utils/constants';
+import { FiAward, FiCopy, FiPause, FiPlay, FiSettings, FiShield, FiUploadCloud } from 'react-icons/fi';
+import { CONTRACTS, formatAddress, formatNumber, parseContractError } from '../utils/constants';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function AdminPage({ account, contracts, stakingData, onRefresh }) {
@@ -16,6 +16,16 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
   const owner = null;
   const isReady = account && contracts?.writeStakingBank;
   const currentRelease = stakingData?.currentRelease;
+
+  const copyRewardAddress = async () => {
+    if (!CONTRACTS.STAKING_BANK) return;
+    try {
+      await navigator.clipboard.writeText(CONTRACTS.STAKING_BANK);
+      toast.success(t('cz.common.copied'));
+    } catch {
+      toast.error(CONTRACTS.STAKING_BANK);
+    }
+  };
 
   const approveRewardToken = async () => {
     if (!contracts?.writeNbtToken || !CONTRACTS.STAKING_BANK || !releaseAmount) return;
@@ -149,6 +159,16 @@ export default function AdminPage({ account, contracts, stakingData, onRefresh }
               <FiUploadCloud className="text-[#FFB800]" />
               {t('cz.admin.monthlyRelease')}
             </h2>
+            <div className="mb-4 p-4 rounded-xl bg-white/5 border border-white/10">
+              <div className="text-sm text-white/45 mb-2">{t('cz.admin.rewardTopupAddress')}</div>
+              <button
+                onClick={copyRewardAddress}
+                className="w-full flex items-center justify-between gap-3 rounded-lg bg-[#0B1120]/60 px-3 py-3 text-left font-mono text-sm text-white/80 hover:bg-white/10"
+              >
+                <span className="truncate">{CONTRACTS.STAKING_BANK}</span>
+                <FiCopy className="shrink-0 text-[#FFB800]" />
+              </button>
+            </div>
             <div className="grid sm:grid-cols-2 gap-3 mb-4">
               <input className="input-premium" value={releaseAmount} onChange={(e) => setReleaseAmount(e.target.value)} placeholder={t('cz.admin.releasePlaceholder')} />
               <input className="input-premium" value={allocateCount} onChange={(e) => setAllocateCount(e.target.value)} placeholder={t('cz.admin.batchPlaceholder')} />
