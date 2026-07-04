@@ -26,6 +26,13 @@ const getWalletChainId = async () => {
   return parseInt(chainId, 16);
 };
 
+const formatFullAmount = (value) => {
+  if (value === undefined || value === null || value === '') return '0';
+  const [whole, fraction = ''] = String(value).split('.');
+  const trimmedFraction = fraction.replace(/0+$/, '');
+  return trimmedFraction ? `${whole}.${trimmedFraction}` : whole;
+};
+
 export default function TokenMiningPage({
   account,
   stakingData,
@@ -300,7 +307,7 @@ export default function TokenMiningPage({
             <div className="grid grid-cols-1 gap-3 text-sm">
               <div className="p-3 rounded-xl bg-white/5 border border-white/5">
                 <div className="text-white/40">{t('cz.node.inviteStakeReward')}</div>
-                <div className="text-[#00D9A5] font-semibold">1 CZ / {t('cz.common.person')}</div>
+                <div className="text-[#00D9A5] font-semibold">{formatFullAmount(stakingData?.inviteReward || '100000000')} CZ / {t('cz.common.person')}</div>
               </div>
             </div>
 

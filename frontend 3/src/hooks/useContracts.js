@@ -73,6 +73,7 @@ export function useStakingBank(contract, account) {
     interactionFeeConfig: null,
     stakingTokenAddress: null,
     rewardTokenAddress: null,
+    inviteReward: '100000000',
     stakeValueRate: '1',
     isPaused: false,
     loading: true,
@@ -92,6 +93,7 @@ export function useStakingBank(contract, account) {
         interactionFeeConfig,
         stakingTokenAddress,
         rewardTokenAddress,
+        inviteReward,
         stakeValueRate,
         rankedData,
       ] = await retryCall(() =>
@@ -102,6 +104,7 @@ export function useStakingBank(contract, account) {
           contract.getInteractionFeeConfig().catch(() => null),
           contract.stakingToken().catch(() => ''),
           contract.rewardToken().catch(() => ''),
+          contract.inviteReward().catch(() => ethers.parseEther('100000000')),
           contract.stakeValueRate().catch(() => ethers.parseEther('1')),
           contract.getRankedNodes(0, 100).catch(() => ({ nodes: [], scores: [], total: 0n })),
         ])
@@ -195,6 +198,7 @@ export function useStakingBank(contract, account) {
         } : null,
         stakingTokenAddress,
         rewardTokenAddress,
+        inviteReward: ethers.formatEther(inviteReward),
         stakeValueRate: ethers.formatEther(stakeValueRate),
         isPaused,
         loading: false,
