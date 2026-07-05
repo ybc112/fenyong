@@ -57,12 +57,13 @@ export default function TokenMiningPage({
   const userInfo = stakingData?.userInfo;
   const miningStatus = stakingData?.miningStatus;
   const feeAmount = stakingData?.interactionFeeConfig?.fee || '0.4';
+  const isNativeFee = stakingData?.interactionFeeConfig?.feeToken === ethers.ZeroAddress || !CONTRACTS.FEE_TOKEN;
   const hasReferrer = userInfo?.referrer && userInfo.referrer !== ZERO;
   const needsStakeApproval = parseFloat(stakingAllowance || '0') < parseFloat(stakeAmount || '0');
-  const needsFeeApproval = parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
+  const needsFeeApproval = !isNativeFee && parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
   const pendingRewardsAmount = userInfo?.pendingRewards || '0';
   const pendingRewardsNumber = parseFloat(pendingRewardsAmount || '0');
-  const needsCompoundFeeApproval = parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
+  const needsCompoundFeeApproval = !isNativeFee && parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
   const canCompoundRewards = !stakingData?.stakingTokenAddress
     || !stakingData?.rewardTokenAddress
     || stakingData.stakingTokenAddress.toLowerCase() === stakingData.rewardTokenAddress.toLowerCase();
@@ -89,6 +90,12 @@ export default function TokenMiningPage({
     }
     return true;
   };
+
+  const feeTxOptions = () => (
+    isNativeFee && parseFloat(feeAmount || '0') > 0
+      ? { value: ethers.parseEther(feeAmount) }
+      : {}
+  );
 
   const approveStakeToken = async () => {
     if (!contracts?.writeNbtToken || !CONTRACTS.STAKING_BANK) return;
@@ -138,7 +145,7 @@ export default function TokenMiningPage({
     }
     setIsStaking(true);
     try {
-      const tx = await contracts.writeStakingBank.stake(ethers.parseEther(stakeAmount), selectedReferrer);
+      const tx = await contracts.writeStakingBank.stake(ethers.parseEther(stakeAmount), selectedReferrer, feeTxOptions());
       toast.loading(t('cz.toast.staking'), { id: 'stake' });
       await tx.wait();
       toast.success(t('cz.toast.stakeSuccess'), { id: 'stake' });
@@ -171,7 +178,7 @@ export default function TokenMiningPage({
     setIsCompounding(true);
     try {
       toast.loading(t('cz.toast.compoundStake'), { id: 'compound' });
-      const tx = await contracts.writeStakingBank.compoundNodeRewards(selectedReferrer);
+      const tx = await contracts.writeStakingBank.compoundNodeRewards(selectedReferrer, feeTxOptions());
       await tx.wait();
 
       toast.success(t('cz.toast.compoundSuccess'), { id: 'compound' });
@@ -195,7 +202,7 @@ export default function TokenMiningPage({
     if (!contracts?.writeStakingBank) return;
     setWithdrawingStakeId(stakeId);
     try {
-      const tx = await contracts.writeStakingBank.withdraw(stakeId);
+      const tx = await contracts.writeStakingBank.withdraw(stakeId, feeTxOptions());
       toast.loading(t('cz.toast.withdrawing'), { id: 'withdraw' });
       await tx.wait();
       toast.success(t('cz.toast.withdrawSuccess'), { id: 'withdraw' });
@@ -211,7 +218,7 @@ export default function TokenMiningPage({
     if (!contracts?.writeStakingBank) return;
     setIsClaiming(true);
     try {
-      const tx = await contracts.writeStakingBank.claimNodeRewards();
+      const tx = await contracts.writeStakingBank.claimNodeRewards(feeTxOptions());
       toast.loading(t('cz.toast.claiming'), { id: 'claimNode' });
       await tx.wait();
       toast.success(t('cz.toast.claimSuccess'), { id: 'claimNode' });

@@ -118,6 +118,85 @@ async function createMainnetProvider(urls) {
   throw new Error('No available BSC Mainnet RPC endpoint.');
 }
 
+function isNativeFeeToken(value) {
+  const normalized = (value || '').trim().toLowerCase();
+  return (
+    !normalized
+    || normalized === 'bnb'
+    || normalized === 'native'
+    || normalized === '0x0'
+    || normalized === ethers.ZeroAddress.toLowerCase()
+  );
+}
+
+function decimalString(value) {
+  return value.toFixed(18).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+async function fetchBnbUsdPrice() {
+  const configured = optionalEnv('BNB_USD_PRICE', '');
+  if (configured) {
+    const price = Number(configured);
+    if (!Number.isFinite(price) || price <= 0) throw new Error(`Invalid BNB_USD_PRICE ${configured}`);
+    return price;
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const response = await fetch('https://api.binance.com/api/v3/ticker/price?symbol=BNBUSDT', {
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    const price = Number(data.price);
+    if (!Number.isFinite(price) || price <= 0) throw new Error(`Invalid Binance price ${data.price}`);
+    return price;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveInteractionFeeConfig() {
+  const requestedFeeToken = optionalEnv('FEE_TOKEN', 'BNB');
+  if (!isNativeFeeToken(requestedFeeToken)) {
+    return {
+      feeTokenAddress: requestedFeeToken,
+      frontendFeeToken: requestedFeeToken,
+      interactionFee: optionalEnv('INTERACTION_FEE', '0.4'),
+      interactionFeeMode: 'erc20',
+      interactionFeeUsd: '',
+      bnbUsdPrice: '',
+    };
+  }
+
+  const manualBnbFee = optionalEnv('INTERACTION_FEE_BNB', '');
+  if (manualBnbFee) {
+    return {
+      feeTokenAddress: ethers.ZeroAddress,
+      frontendFeeToken: '',
+      interactionFee: manualBnbFee,
+      interactionFeeMode: 'native-bnb',
+      interactionFeeUsd: optionalEnv('INTERACTION_FEE_USD', optionalEnv('INTERACTION_FEE', '0.4')),
+      bnbUsdPrice: optionalEnv('BNB_USD_PRICE', ''),
+    };
+  }
+
+  const feeUsd = Number(optionalEnv('INTERACTION_FEE_USD', optionalEnv('INTERACTION_FEE', '0.4')));
+  if (!Number.isFinite(feeUsd) || feeUsd <= 0) {
+    throw new Error(`Invalid INTERACTION_FEE_USD/INTERACTION_FEE ${feeUsd}`);
+  }
+  const bnbUsdPrice = await fetchBnbUsdPrice();
+  return {
+    feeTokenAddress: ethers.ZeroAddress,
+    frontendFeeToken: '',
+    interactionFee: decimalString(feeUsd / bnbUsdPrice),
+    interactionFeeMode: 'native-bnb',
+    interactionFeeUsd: String(feeUsd),
+    bnbUsdPrice: String(bnbUsdPrice),
+  };
+}
+
 async function wait(tx, label) {
   console.log(`${label}: ${tx.hash}`);
   const receipt = await tx.wait();
@@ -136,10 +215,16 @@ async function main() {
   const initialRewardFund = optionalEnv('INITIAL_REWARD_FUND', '0');
   const inviteReward = optionalEnv('INVITE_REWARD', '100000000');
   const existingTokenAddress = optionalEnv('CZ_TOKEN_ADDRESS', '0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04');
-  const feeTokenAddress = optionalEnv('FEE_TOKEN', '0x55d398326f99059fF775485246999027B3197955');
+  const {
+    feeTokenAddress,
+    frontendFeeToken,
+    interactionFee,
+    interactionFeeMode,
+    interactionFeeUsd,
+    bnbUsdPrice,
+  } = await resolveInteractionFeeConfig();
   const feeReceiverA = optionalEnv('FEE_RECEIVER_A', '0xfd682CbCb678ce5D273Eb778B946F6a4d8f1e8Ed');
   const feeReceiverB = optionalEnv('FEE_RECEIVER_B', '0x5A378b61193ac2ce07cE816893C080804504a2f0');
-  const interactionFee = optionalEnv('INTERACTION_FEE', '0.4');
   const deploymentsDir = path.resolve(rootDir, optionalEnv('DEPLOYMENTS_DIR', 'deployments'));
   const frontendEnvPath = path.resolve(rootDir, optionalEnv('FRONTEND_ENV_PATH', 'frontend 3/.env'));
 
@@ -176,8 +261,11 @@ async function main() {
   console.log(`Network: BSC Mainnet (Chain ID: 56)`);
   console.log(`CZ Token: ${existingTokenAddress}`);
   console.log(`NBT Pair: ${nbtPair || '(none)'}`);
-  console.log(`Fee Token: ${feeTokenAddress}`);
-  console.log(`Interaction Fee: ${interactionFee} U`);
+  console.log(`Fee Mode: ${interactionFeeMode}`);
+  console.log(`Fee Token: ${feeTokenAddress === ethers.ZeroAddress ? 'Native BNB' : feeTokenAddress}`);
+  console.log(`Interaction Fee: ${interactionFee} ${feeTokenAddress === ethers.ZeroAddress ? 'BNB' : 'token units'}`);
+  if (interactionFeeUsd) console.log(`Interaction Fee USD Target: ${interactionFeeUsd} U`);
+  if (bnbUsdPrice) console.log(`BNB/USD Price Used: ${bnbUsdPrice}`);
   console.log(`Fee Receiver A: ${feeReceiverA}`);
   console.log(`Fee Receiver B: ${feeReceiverB}`);
   console.log(`Initial Reward Fund: ${initialRewardFund}`);
@@ -210,8 +298,8 @@ async function main() {
     await wait(await token.transfer(stakingBank, rewardFundWei), 'Transfer initial rewards');
   }
 
-  writeFrontendEnv(frontendEnvPath, { nbtToken: existingTokenAddress, stakingBank, nbtPair, feeToken: feeTokenAddress });
-  updateRenderYaml(path.join(rootDir, 'render.yaml'), { nbtToken: existingTokenAddress, stakingBank, nbtPair, feeToken: feeTokenAddress });
+  writeFrontendEnv(frontendEnvPath, { nbtToken: existingTokenAddress, stakingBank, nbtPair, feeToken: frontendFeeToken });
+  updateRenderYaml(path.join(rootDir, 'render.yaml'), { nbtToken: existingTokenAddress, stakingBank, nbtPair, feeToken: frontendFeeToken });
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const deploymentPath = writeDeploymentJson(deploymentsDir, {
@@ -224,6 +312,9 @@ async function main() {
     nbtPair,
     feeToken: feeTokenAddress,
     interactionFee,
+    interactionFeeMode,
+    interactionFeeUsd,
+    bnbUsdPrice,
     feeReceiverA,
     feeReceiverB,
     inviteReward,

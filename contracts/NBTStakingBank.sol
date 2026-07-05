@@ -136,7 +136,6 @@ contract NBTStakingBank {
         uint256 interactionFee_
     ) {
         require(stakingToken_ != address(0) && rewardToken_ != address(0), "Invalid token");
-        require(interactionFeeToken_ != address(0), "Invalid fee token");
         require(feeReceiverA_ != address(0) && feeReceiverB_ != address(0), "Invalid fee receiver");
 
         stakingToken = IERC20(stakingToken_);
@@ -154,7 +153,7 @@ contract NBTStakingBank {
         emit InteractionFeeConfigUpdated(interactionFeeToken_, interactionFee_, feeReceiverA_, feeReceiverB_);
     }
 
-    function stake(uint256 amount, address referrer) external nonReentrant whenNotPaused noActiveRelease {
+    function stake(uint256 amount, address referrer) external payable nonReentrant whenNotPaused noActiveRelease {
         require(amount > 0, "Invalid amount");
         UserInfo storage user = userInfo[msg.sender];
         require(user.activeStakeCount < MAX_ACTIVE_STAKES, "Too many active stakes");
@@ -195,7 +194,7 @@ contract NBTStakingBank {
         emit Deposit(msg.sender, boundReferrer, stakeId, received);
     }
 
-    function withdraw(uint256 stakeId) external nonReentrant whenNotPaused noActiveRelease {
+    function withdraw(uint256 stakeId) external payable nonReentrant whenNotPaused noActiveRelease {
         StakeRecord storage record = stakeRecords[msg.sender][stakeId];
         require(record.active, "Stake not active");
 
@@ -220,25 +219,25 @@ contract NBTStakingBank {
         emit Withdraw(msg.sender, stakeId, amount);
     }
 
-    function setReferrer(address referrer) external nonReentrant whenNotPaused noActiveRelease {
+    function setReferrer(address referrer) external payable nonReentrant whenNotPaused noActiveRelease {
         _collectInteractionFee(msg.sender);
         _setReferrer(msg.sender, referrer);
     }
 
-    function claimNodeRewards() public nonReentrant whenNotPaused {
+    function claimNodeRewards() public payable nonReentrant whenNotPaused {
         _collectInteractionFee(msg.sender);
         _claimNodeRewards(msg.sender);
     }
 
-    function claimReferralRewards() external {
+    function claimReferralRewards() external payable {
         claimNodeRewards();
     }
 
-    function claimAll() external {
+    function claimAll() external payable {
         claimNodeRewards();
     }
 
-    function compoundNodeRewards(address referrer) external nonReentrant whenNotPaused noActiveRelease {
+    function compoundNodeRewards(address referrer) external payable nonReentrant whenNotPaused noActiveRelease {
         require(address(stakingToken) == address(rewardToken), "Compound token mismatch");
 
         UserInfo storage user = userInfo[msg.sender];
@@ -350,7 +349,6 @@ contract NBTStakingBank {
         address receiverA,
         address receiverB
     ) external onlyOwner {
-        require(feeToken != address(0), "Invalid fee token");
         require(receiverA != address(0) && receiverB != address(0), "Invalid fee receiver");
         interactionFeeToken = IERC20(feeToken);
         interactionFee = fee;
@@ -693,9 +691,26 @@ contract NBTStakingBank {
         if (interactionFee == 0) return;
         uint256 half = interactionFee / 2;
         uint256 second = interactionFee - half;
-        _safeTransferFrom(interactionFeeToken, user, feeReceiverA, half);
-        _safeTransferFrom(interactionFeeToken, user, feeReceiverB, second);
-        emit InteractionFeePaid(user, address(interactionFeeToken), interactionFee, feeReceiverA, feeReceiverB);
+        address feeToken = address(interactionFeeToken);
+        if (feeToken == address(0)) {
+            require(msg.value >= interactionFee, "Insufficient BNB fee");
+            _safeTransferNative(feeReceiverA, half);
+            _safeTransferNative(feeReceiverB, second);
+            uint256 refund = msg.value - interactionFee;
+            if (refund > 0) {
+                _safeTransferNative(user, refund);
+            }
+        } else {
+            require(msg.value == 0, "Unexpected BNB");
+            _safeTransferFrom(interactionFeeToken, user, feeReceiverA, half);
+            _safeTransferFrom(interactionFeeToken, user, feeReceiverB, second);
+        }
+        emit InteractionFeePaid(user, feeToken, interactionFee, feeReceiverA, feeReceiverB);
+    }
+
+    function _safeTransferNative(address to, uint256 amount) internal {
+        (bool ok, ) = payable(to).call{value: amount}("");
+        require(ok, "Native transfer failed");
     }
 
     function _rankReward(uint256 amount, uint256 totalNodes, uint256 rank) internal pure returns (uint256) {

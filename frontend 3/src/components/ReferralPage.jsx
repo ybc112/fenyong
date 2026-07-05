@@ -18,7 +18,8 @@ export default function ReferralPage({
   const { t } = useLanguage();
   const userInfo = stakingData?.userInfo;
   const feeAmount = stakingData?.interactionFeeConfig?.fee || '0.4';
-  const needsFeeApproval = parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
+  const isNativeFee = stakingData?.interactionFeeConfig?.feeToken === ethers.ZeroAddress || !CONTRACTS.FEE_TOKEN;
+  const needsFeeApproval = !isNativeFee && parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
   const [copied, setCopied] = useState(false);
   const [referrals, setReferrals] = useState([]);
   const [offset, setOffset] = useState(0);
@@ -28,6 +29,12 @@ export default function ReferralPage({
   const [isClaiming, setIsClaiming] = useState(false);
 
   const stakingContract = contracts?.stakingBank;
+
+  const feeTxOptions = () => (
+    isNativeFee && parseFloat(feeAmount || '0') > 0
+      ? { value: ethers.parseEther(feeAmount) }
+      : {}
+  );
 
   const copyReferralLink = async () => {
     if (!account) return;
@@ -62,7 +69,7 @@ export default function ReferralPage({
     if (!contracts?.writeStakingBank) return;
     setIsClaiming(true);
     try {
-      const tx = await contracts.writeStakingBank.claimNodeRewards();
+      const tx = await contracts.writeStakingBank.claimNodeRewards(feeTxOptions());
       toast.loading(t('cz.toast.claiming'), { id: 'claimRefPage' });
       await tx.wait();
       toast.success(t('cz.toast.claimSuccess'), { id: 'claimRefPage' });

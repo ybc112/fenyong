@@ -123,6 +123,9 @@ export const CONTRACT_ERRORS = {
   'Paused': '合约已暂停',
   'user rejected transaction': '您取消了交易',
   'insufficient funds': '钱包余额不足以支付 Gas 费',
+  'Insufficient BNB fee': 'BNB 交互费不足',
+  'Unexpected BNB': '当前操作不需要附带 BNB',
+  'Native transfer failed': 'BNB 手续费发送失败',
   'execution reverted': '交易执行失败',
   'could not coalesce error': '钱包返回异常，交易可能已经提交，请刷新页面或在钱包交易记录中确认',
 };

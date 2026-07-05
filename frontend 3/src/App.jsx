@@ -48,6 +48,13 @@ function App() {
     account,
     CONTRACTS.STAKING_BANK
   );
+  const feeConfig = stakingData?.interactionFeeConfig;
+  const isNativeFee = feeConfig?.feeToken === ethers.ZeroAddress || !CONTRACTS.FEE_TOKEN;
+  const feeTxOptions = () => (
+    isNativeFee && parseFloat(feeConfig?.fee || '0') > 0
+      ? { value: ethers.parseEther(feeConfig.fee) }
+      : {}
+  );
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -134,7 +141,7 @@ function App() {
   }, [walletError]);
 
   const handleConfirmBind = async () => {
-    if (!pendingReferrer || !contracts.stakingBank) return;
+    if (!pendingReferrer || !contracts.writeStakingBank) return;
 
     setIsBindingReferrer(true);
     try {
@@ -147,7 +154,7 @@ function App() {
         toast.success(t('toast.bindSuccess'));
       } else {
         toast.loading(t('toast.bindingReferrer'), { id: 'bindRef' });
-        const tx = await contracts.stakingBank.setReferrer(pendingReferrer);
+        const tx = await contracts.writeStakingBank.setReferrer(pendingReferrer, feeTxOptions());
         await tx.wait();
         toast.success(t('toast.bindSuccess'), { id: 'bindRef' });
       }
