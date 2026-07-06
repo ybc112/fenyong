@@ -73,7 +73,9 @@ export function useStakingBank(contract, account) {
     interactionFeeConfig: null,
     stakingTokenAddress: null,
     rewardTokenAddress: null,
-    inviteReward: '100000000',
+    inviteReward: '1000000',
+    minReferralStakeValue: '100',
+    lockPeriod: 15 * 24 * 60 * 60,
     stakeValueRate: '1',
     isPaused: false,
     loading: true,
@@ -94,6 +96,8 @@ export function useStakingBank(contract, account) {
         stakingTokenAddress,
         rewardTokenAddress,
         inviteReward,
+        minReferralStakeValue,
+        lockPeriod,
         stakeValueRate,
         rankedData,
       ] = await retryCall(() =>
@@ -104,7 +108,9 @@ export function useStakingBank(contract, account) {
           contract.getInteractionFeeConfig().catch(() => null),
           contract.stakingToken().catch(() => ''),
           contract.rewardToken().catch(() => ''),
-          contract.inviteReward().catch(() => ethers.parseEther('100000000')),
+          contract.inviteReward().catch(() => ethers.parseEther('1000000')),
+          contract.minReferralStakeValue ? contract.minReferralStakeValue().catch(() => ethers.parseEther('100')) : Promise.resolve(ethers.parseEther('100')),
+          contract.LOCK_PERIOD ? contract.LOCK_PERIOD().catch(() => BigInt(15 * 24 * 60 * 60)) : Promise.resolve(BigInt(15 * 24 * 60 * 60)),
           contract.stakeValueRate().catch(() => ethers.parseEther('1')),
           contract.getRankedNodes(0, 100).catch(() => ({ nodes: [], scores: [], total: 0n })),
         ])
@@ -122,13 +128,21 @@ export function useStakingBank(contract, account) {
 
         try {
           const userStakes = await retryCall(() => contract.getUserStakes(account));
-          stakes = userStakes.stakeIds.map((id, index) => ({
-            stakeId: Number(id),
-            amount: ethers.formatEther(userStakes.amounts[index]),
-            scoreValue: ethers.formatEther(userStakes.scoreValues?.[index] ?? 0n),
-            startTime: Number(userStakes.startTimes[index]),
-            active: userStakes.actives[index],
-          })).filter(stake => stake.active);
+          const lockPeriodSeconds = Number(lockPeriod);
+          const nowSeconds = Math.floor(Date.now() / 1000);
+          stakes = userStakes.stakeIds.map((id, index) => {
+            const startTime = Number(userStakes.startTimes[index]);
+            const unlockTime = startTime + lockPeriodSeconds;
+            return {
+              stakeId: Number(id),
+              amount: ethers.formatEther(userStakes.amounts[index]),
+              scoreValue: ethers.formatEther(userStakes.scoreValues?.[index] ?? 0n),
+              startTime,
+              unlockTime,
+              isUnlocked: nowSeconds >= unlockTime,
+              active: userStakes.actives[index],
+            };
+          }).filter(stake => stake.active);
         } catch {
           stakes = [];
         }
@@ -164,6 +178,8 @@ export function useStakingBank(contract, account) {
           totalInviteClaimed: ethers.formatEther(info.totalInviteClaimed ?? info[8]),
           pendingRankRewards: ethers.formatEther(info.pendingRankRewards ?? info[9]),
           totalRankClaimed: ethers.formatEther(info.totalRankClaimed ?? info[10]),
+          lockedInviteRewards: ethers.formatEther(info.lockedInviteRewards ?? info[11] ?? 0n),
+          inviteUnlockCursor: Number(info.inviteUnlockCursor ?? info[12] ?? 0n),
           pendingRewards: ethers.formatEther(userInfo.pendingRewards ?? userInfo[1]),
           totalClaimed: ethers.formatEther(userInfo.totalClaimed ?? userInfo[2]),
           rank: Number(userInfo.rank ?? userInfo[3]),
@@ -199,6 +215,8 @@ export function useStakingBank(contract, account) {
         stakingTokenAddress,
         rewardTokenAddress,
         inviteReward: ethers.formatEther(inviteReward),
+        minReferralStakeValue: ethers.formatEther(minReferralStakeValue),
+        lockPeriod: Number(lockPeriod),
         stakeValueRate: ethers.formatEther(stakeValueRate),
         isPaused,
         loading: false,

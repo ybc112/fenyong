@@ -21,6 +21,8 @@ contract NBTStakingBank {
         uint256 totalInviteClaimed;
         uint256 pendingRankRewards;
         uint256 totalRankClaimed;
+        uint256 lockedInviteRewards;
+        uint256 inviteUnlockCursor;
     }
 
     struct StakeRecord {
@@ -40,6 +42,13 @@ contract NBTStakingBank {
         bool finalized;
     }
 
+    struct InviteRewardLock {
+        address invitee;
+        uint256 stakeId;
+        uint256 amount;
+        uint256 unlockTime;
+    }
+
     IERC20 public immutable stakingToken;
     IERC20 public immutable rewardToken;
     IERC20 public interactionFeeToken;
@@ -47,7 +56,9 @@ contract NBTStakingBank {
     uint256 public constant RATE_BASE = 10_000;
     uint256 public constant MAX_ACTIVE_STAKES = 50;
     uint256 public constant MAX_REFERRAL_DEPTH = 20;
-    uint256 public constant DEFAULT_INVITE_REWARD = 1 ether;
+    uint256 public constant LOCK_PERIOD = 15 days;
+    uint256 public constant DEFAULT_INVITE_REWARD = 1_000_000 ether;
+    uint256 public constant DEFAULT_MIN_REFERRAL_STAKE_VALUE = 100 ether;
 
     uint256 public totalStaked;
     uint256 public totalRankDistributed;
@@ -56,6 +67,7 @@ contract NBTStakingBank {
     uint256 public totalInviteRewardsClaimed;
     uint256 public interactionFee;
     uint256 public inviteReward;
+    uint256 public minReferralStakeValue;
     uint256 public stakeValueRate;
     uint256 public startTime;
     uint256 public currentEpochId;
@@ -71,6 +83,7 @@ contract NBTStakingBank {
     mapping(address => mapping(uint256 => StakeRecord)) public stakeRecords;
     mapping(address => bool) public operators;
     mapping(address => address[]) private _referrals;
+    mapping(address => InviteRewardLock[]) private _inviteRewardLocks;
     mapping(address => mapping(address => bool)) public qualifiedReferral;
     mapping(uint256 => MonthlyRelease) public monthlyReleases;
 
@@ -81,6 +94,7 @@ contract NBTStakingBank {
     event Withdraw(address indexed user, uint256 indexed stakeId, uint256 amount);
     event ReferrerSet(address indexed user, address indexed referrer);
     event ReferralQualified(address indexed referrer, address indexed user, uint256 inviteReward);
+    event InviteRewardUnlocked(address indexed referrer, address indexed invitee, uint256 amount);
     event NodeScoreUpdated(address indexed node, uint256 score, uint256 rank);
     event NodeRewardsClaimed(address indexed user, uint256 inviteReward, uint256 rankReward);
     event NodeRewardsCompounded(address indexed user, uint256 indexed stakeId, uint256 amount);
@@ -90,6 +104,7 @@ contract NBTStakingBank {
     event InteractionFeePaid(address indexed user, address indexed token, uint256 totalFee, address receiverA, address receiverB);
     event InteractionFeeConfigUpdated(address indexed feeToken, uint256 fee, address indexed receiverA, address indexed receiverB);
     event InviteRewardUpdated(uint256 reward);
+    event MinReferralStakeValueUpdated(uint256 value);
     event StakeValueRateUpdated(uint256 rate);
     event OperatorUpdated(address indexed operator, bool status);
     event Paused();
@@ -145,6 +160,7 @@ contract NBTStakingBank {
         feeReceiverB = feeReceiverB_;
         interactionFee = interactionFee_;
         inviteReward = DEFAULT_INVITE_REWARD;
+        minReferralStakeValue = DEFAULT_MIN_REFERRAL_STAKE_VALUE;
         stakeValueRate = 1 ether;
         owner = msg.sender;
         startTime = block.timestamp;
@@ -187,7 +203,7 @@ contract NBTStakingBank {
 
         address boundReferrer = user.referrer;
         if (boundReferrer != address(0)) {
-            _qualifyReferral(boundReferrer, msg.sender);
+            _qualifyReferral(boundReferrer, msg.sender, stakeId, scoreValue);
             _increaseNodeScore(boundReferrer, scoreValue);
         }
 
@@ -197,6 +213,7 @@ contract NBTStakingBank {
     function withdraw(uint256 stakeId) external payable nonReentrant whenNotPaused noActiveRelease {
         StakeRecord storage record = stakeRecords[msg.sender][stakeId];
         require(record.active, "Stake not active");
+        require(block.timestamp >= record.startTime + LOCK_PERIOD, "Lock period not ended");
 
         _collectInteractionFee(msg.sender);
 
@@ -251,6 +268,8 @@ contract NBTStakingBank {
 
         _collectInteractionFee(msg.sender);
 
+        _unlockInviteRewards(msg.sender);
+
         uint256 inviteAmount = user.pendingInviteRewards;
         uint256 rankAmount = user.pendingRankRewards;
         uint256 amount = inviteAmount + rankAmount;
@@ -279,7 +298,7 @@ contract NBTStakingBank {
 
         address boundReferrer = user.referrer;
         if (boundReferrer != address(0)) {
-            _qualifyReferral(boundReferrer, msg.sender);
+            _qualifyReferral(boundReferrer, msg.sender, stakeId, scoreValue);
             _increaseNodeScore(boundReferrer, scoreValue);
         }
 
@@ -362,6 +381,11 @@ contract NBTStakingBank {
         emit InviteRewardUpdated(reward);
     }
 
+    function setMinReferralStakeValue(uint256 value) external onlyOwner {
+        minReferralStakeValue = value;
+        emit MinReferralStakeValueUpdated(value);
+    }
+
     function setStakeValueRate(uint256 rate) external onlyOwner {
         require(rate > 0, "Invalid rate");
         stakeValueRate = rate;
@@ -415,8 +439,10 @@ contract NBTStakingBank {
         uint256 totalClaimed,
         uint256 rank
     ) {
+        info = userInfo[user];
+        info.pendingInviteRewards += _unlockedInviteRewardView(user);
         return (
-            userInfo[user],
+            info,
             pendingRewardAll(user),
             userInfo[user].totalInviteClaimed + userInfo[user].totalRankClaimed,
             getNodeRank(user)
@@ -457,8 +483,30 @@ contract NBTStakingBank {
         return (record.amount, record.scoreValue, record.startTime, record.active);
     }
 
+    function getInviteRewardLocks(address referrer) external view returns (
+        address[] memory invitees,
+        uint256[] memory stakeIds,
+        uint256[] memory amounts,
+        uint256[] memory unlockTimes,
+        uint256 cursor
+    ) {
+        InviteRewardLock[] storage locks = _inviteRewardLocks[referrer];
+        invitees = new address[](locks.length);
+        stakeIds = new uint256[](locks.length);
+        amounts = new uint256[](locks.length);
+        unlockTimes = new uint256[](locks.length);
+        for (uint256 i = 0; i < locks.length; i++) {
+            InviteRewardLock memory rewardLock = locks[i];
+            invitees[i] = rewardLock.invitee;
+            stakeIds[i] = rewardLock.stakeId;
+            amounts[i] = rewardLock.amount;
+            unlockTimes[i] = rewardLock.unlockTime;
+        }
+        cursor = userInfo[referrer].inviteUnlockCursor;
+    }
+
     function pendingRewardAll(address user) public view returns (uint256) {
-        return userInfo[user].pendingInviteRewards + userInfo[user].pendingRankRewards;
+        return userInfo[user].pendingInviteRewards + _unlockedInviteRewardView(user) + userInfo[user].pendingRankRewards;
     }
 
     function getMiningStatus() external view returns (
@@ -577,13 +625,20 @@ contract NBTStakingBank {
         emit ReferrerSet(user, referrer);
     }
 
-    function _qualifyReferral(address referrer, address user) internal {
+    function _qualifyReferral(address referrer, address user, uint256 stakeId, uint256 scoreValue) internal {
         if (qualifiedReferral[referrer][user]) return;
+        if (scoreValue < minReferralStakeValue) return;
         require(_rewardReserveAvailable() >= inviteReward, "Insufficient invite reward reserve");
         qualifiedReferral[referrer][user] = true;
         userInfo[referrer].directReferrals += 1;
-        userInfo[referrer].pendingInviteRewards += inviteReward;
+        userInfo[referrer].lockedInviteRewards += inviteReward;
         totalInviteRewardsAccrued += inviteReward;
+        _inviteRewardLocks[referrer].push(InviteRewardLock({
+            invitee: user,
+            stakeId: stakeId,
+            amount: inviteReward,
+            unlockTime: block.timestamp + LOCK_PERIOD
+        }));
         emit ReferralQualified(referrer, user, inviteReward);
     }
 
@@ -671,6 +726,7 @@ contract NBTStakingBank {
 
     function _claimNodeRewards(address user) internal {
         UserInfo storage info = userInfo[user];
+        _unlockInviteRewards(user);
         uint256 inviteAmount = info.pendingInviteRewards;
         uint256 rankAmount = info.pendingRankRewards;
         uint256 totalAmount = inviteAmount + rankAmount;
@@ -685,6 +741,36 @@ contract NBTStakingBank {
 
         _safeTransfer(rewardToken, user, totalAmount);
         emit NodeRewardsClaimed(user, inviteAmount, rankAmount);
+    }
+
+    function _unlockInviteRewards(address referrer) internal {
+        UserInfo storage info = userInfo[referrer];
+        InviteRewardLock[] storage locks = _inviteRewardLocks[referrer];
+        uint256 cursor = info.inviteUnlockCursor;
+        uint256 unlocked;
+
+        while (cursor < locks.length && locks[cursor].unlockTime <= block.timestamp) {
+            unlocked += locks[cursor].amount;
+            emit InviteRewardUnlocked(referrer, locks[cursor].invitee, locks[cursor].amount);
+            cursor += 1;
+        }
+
+        if (unlocked > 0) {
+            info.inviteUnlockCursor = cursor;
+            info.lockedInviteRewards -= unlocked;
+            info.pendingInviteRewards += unlocked;
+        }
+    }
+
+    function _unlockedInviteRewardView(address referrer) internal view returns (uint256 unlocked) {
+        UserInfo storage info = userInfo[referrer];
+        InviteRewardLock[] storage locks = _inviteRewardLocks[referrer];
+        uint256 cursor = info.inviteUnlockCursor;
+
+        while (cursor < locks.length && locks[cursor].unlockTime <= block.timestamp) {
+            unlocked += locks[cursor].amount;
+            cursor += 1;
+        }
     }
 
     function _collectInteractionFee(address user) internal {

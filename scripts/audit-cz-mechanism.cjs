@@ -5,8 +5,10 @@ const { ethers } = hre;
 const CZ_MAINNET = "0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04";
 const FEE_A = "0xfd682CbCb678ce5D273Eb778B946F6a4d8f1e8Ed";
 const FEE_B = "0x5A378b61193ac2ce07cE816893C080804504a2f0";
-const INVITE_REWARD_AMOUNT = "100000000";
+const INVITE_REWARD_AMOUNT = "1000000";
 const NATIVE_INTERACTION_FEE = "0.0005";
+const MIN_REFERRAL_STAKE_VALUE = "100";
+const LOCK_PERIOD_SECONDS = 15 * 24 * 60 * 60;
 
 const ether = ethers.parseEther;
 const fmt = (value) => Number(ethers.formatEther(value));
@@ -64,6 +66,7 @@ async function main() {
   assertEqual(await bank.feeReceiverB(), FEE_B, "fee receiver B");
   assertBigEqual(await bank.interactionFee(), nativeFee, "interaction fee");
   assertBigEqual(await bank.inviteReward(), inviteReward, "invite reward");
+  assertBigEqual(await bank.minReferralStakeValue(), ether(MIN_REFERRAL_STAKE_VALUE), "min referral stake value");
 
   const reserve = inviteReward * 120n + ether("100000");
   await cz.transfer(await bank.getAddress(), reserve);
@@ -94,6 +97,13 @@ async function main() {
   assertBigEqual(feeABalance - beforeStakeFeeA, halfNativeFee * 120n, "fee receiver A after 120 stakes");
   assertBigEqual(feeBBalance - beforeStakeFeeB, halfNativeFee * 120n, "fee receiver B after 120 stakes");
 
+  try {
+    await bank.connect(stakers[0]).withdraw(0, { value: nativeFee });
+    throw new Error("withdraw before maturity should revert");
+  } catch (error) {
+    if (!String(error.message).includes("Lock period not ended")) throw error;
+  }
+
   const ranked = await bank.getRankedNodes(0, 10);
   assertEqual(Number(ranked.total), 120, "ranked node count");
   assertEqual(ranked.nodes[0], nodes[0].address, "rank 1 node");
@@ -101,7 +111,12 @@ async function main() {
 
   const nodeAInfo = await bank.getUserInfo(nodes[0].address);
   assertEqual(Number(nodeAInfo.info.directReferrals), 1, "rank 1 qualified referrals");
-  assertBigEqual(nodeAInfo.info.pendingInviteRewards, inviteReward, "rank 1 invite rewards");
+  assertBigEqual(nodeAInfo.info.pendingInviteRewards, 0n, "rank 1 invite rewards locked before maturity");
+  assertBigEqual(nodeAInfo.info.lockedInviteRewards, inviteReward, "rank 1 locked invite rewards");
+
+  const lowValueNodeInfo = await bank.getUserInfo(nodes[50].address);
+  assertEqual(Number(lowValueNodeInfo.info.directReferrals), 0, "under 100U stake does not qualify invite reward");
+  assertBigEqual(lowValueNodeInfo.info.pendingInviteRewards, 0n, "under 100U pending invite reward");
 
   const release = ether("10000");
   await cz.approve(await bank.getAddress(), release);
@@ -132,6 +147,12 @@ async function main() {
   assertBigEqual(rank11To50, ether("3000"), "rank 11-50 pool");
   assertBigEqual(rank51To100, ether("1500"), "rank 51-100 pool");
   assertBigEqual(after100, ether("500"), "rank after 100 pool");
+
+  await ethers.provider.send("evm_increaseTime", [LOCK_PERIOD_SECONDS]);
+  await ethers.provider.send("evm_mine", []);
+
+  const maturedNodeAInfo = await bank.getUserInfo(nodes[0].address);
+  assertBigEqual(maturedNodeAInfo.info.pendingInviteRewards, inviteReward, "rank 1 invite rewards unlocked after maturity");
 
   await owner.sendTransaction({ to: nodes[0].address, value: ether("1") });
   const beforeClaimFeeA = await ethers.provider.getBalance(FEE_A);
@@ -184,6 +205,8 @@ async function main() {
     interactionFeeToken: "BNB",
     interactionFee: NATIVE_INTERACTION_FEE,
     inviteReward: INVITE_REWARD_AMOUNT,
+    minReferralStakeValue: MIN_REFERRAL_STAKE_VALUE,
+    lockPeriodDays: 15,
     rankedNodeCount: Number(ranked.total),
     feeReceiverAAfter120Stakes: fmt(feeABalance - beforeStakeFeeA),
     feeReceiverBAfter120Stakes: fmt(feeBBalance - beforeStakeFeeB),

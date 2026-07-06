@@ -208,12 +208,13 @@ async function main() {
   loadDotenv(path.join(rootDir, '.env.mainnet'));
 
   const rpcUrls = parseRpcUrls();
-  const privateKey = requireEnv('PRIVATE_KEY');
+  const rawPrivateKey = requireEnv('PRIVATE_KEY');
+  const privateKey = rawPrivateKey.startsWith('0x') ? rawPrivateKey : `0x${rawPrivateKey}`;
   const tokenName = optionalEnv('TOKEN_NAME', 'NBT');
   const tokenSymbol = optionalEnv('TOKEN_SYMBOL', 'NBT');
   const initialSupply = optionalEnv('INITIAL_SUPPLY', '200000000');
   const initialRewardFund = optionalEnv('INITIAL_REWARD_FUND', '0');
-  const inviteReward = optionalEnv('INVITE_REWARD', '100000000');
+  const inviteReward = optionalEnv('INVITE_REWARD', '1000000');
   const existingTokenAddress = optionalEnv('CZ_TOKEN_ADDRESS', '0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04');
   const {
     feeTokenAddress,

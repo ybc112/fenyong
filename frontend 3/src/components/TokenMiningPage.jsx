@@ -33,6 +33,8 @@ const formatFullAmount = (value) => {
   return trimmedFraction ? `${whole}.${trimmedFraction}` : whole;
 };
 
+const formatDateTime = (timestamp) => new Date(timestamp * 1000).toLocaleString();
+
 export default function TokenMiningPage({
   account,
   stakingData,
@@ -68,6 +70,7 @@ export default function TokenMiningPage({
     || !stakingData?.rewardTokenAddress
     || stakingData.stakingTokenAddress.toLowerCase() === stakingData.rewardTokenAddress.toLowerCase();
   const activeRelease = miningStatus?.releaseInProgress;
+  const minReferralStakeValue = stakingData?.minReferralStakeValue || '100';
 
   const rankBands = [
     { label: t('cz.node.bandTop10'), percent: '50%', color: '#FFB800' },
@@ -315,7 +318,13 @@ export default function TokenMiningPage({
             <div className="grid grid-cols-1 gap-3 text-sm">
               <div className="p-3 rounded-xl bg-white/5 border border-white/5">
                 <div className="text-white/40">{t('cz.node.inviteStakeReward')}</div>
-                <div className="text-[#00D9A5] font-semibold">{formatFullAmount(stakingData?.inviteReward || '100000000')} CZ / {t('cz.common.person')}</div>
+                <div className="text-[#00D9A5] font-semibold">{formatFullAmount(stakingData?.inviteReward || '1000000')} CZ / {t('cz.common.person')}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-[#00D9A5]/10 border border-[#00D9A5]/20 text-white/70 leading-relaxed">
+                <div>质押15天，解锁后自由操作</div>
+                <div>点击复投，质押周期自动延续15天</div>
+                <div>排名权益持续生效，奖励自动累积</div>
+                <div>邀请人成功质押满 {formatNumber(minReferralStakeValue, 2)}U 价值代币，获得 {formatFullAmount(stakingData?.inviteReward || '1000000')} CZ 奖励，质押到期后可领取</div>
               </div>
             </div>
 
@@ -389,6 +398,9 @@ export default function TokenMiningPage({
               <div className="p-4 rounded-xl bg-white/5 border border-white/5">
                 <div className="text-white/45 text-sm">{t('cz.node.invitePending')}</div>
                 <div className="text-2xl font-bold text-[#00D9A5]">{formatNumber(userInfo?.pendingInviteRewards, 4)} CZ</div>
+                {parseFloat(userInfo?.lockedInviteRewards || '0') > 0 && (
+                  <div className="text-xs text-white/35 mt-1">锁定中 {formatNumber(userInfo?.lockedInviteRewards, 4)} CZ，到期后可领取</div>
+                )}
               </div>
               <div className="p-4 rounded-xl bg-white/5 border border-white/5">
                 <div className="text-white/45 text-sm">{t('cz.node.rankPending')}</div>
@@ -448,14 +460,17 @@ export default function TokenMiningPage({
                 <div key={stake.stakeId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl bg-white/5 border border-white/10">
                   <div>
                     <div className="text-white font-semibold">#{stake.stakeId} · {formatNumber(stake.amount, 4)} CZ</div>
-                    <div className="text-xs text-white/35 mt-1">{t('cz.node.stakeValue')} {formatNumber(stake.scoreValue, 4)} U · {t('cz.node.startTime')} {new Date(stake.startTime * 1000).toLocaleString()}</div>
+                    <div className="text-xs text-white/35 mt-1">{t('cz.node.stakeValue')} {formatNumber(stake.scoreValue, 4)} U · {t('cz.node.startTime')} {formatDateTime(stake.startTime)}</div>
+                    <div className={`text-xs mt-1 ${stake.isUnlocked ? 'text-[#00D9A5]' : 'text-[#FFB800]'}`}>
+                      {stake.isUnlocked ? '已解锁，可自由操作' : `15天质押中，解锁时间 ${formatDateTime(stake.unlockTime)}`}
+                    </div>
                   </div>
                   <button
                     onClick={() => needsFeeApproval ? approveFeeToken() : handleWithdraw(stake.stakeId)}
-                    disabled={withdrawingStakeId === stake.stakeId || activeRelease}
+                    disabled={withdrawingStakeId === stake.stakeId || activeRelease || !stake.isUnlocked}
                     className="px-4 py-2 rounded-lg bg-white/10 text-white/75 hover:bg-white/15 disabled:opacity-50"
                   >
-                    {activeRelease ? t('cz.node.cannotWithdraw') : withdrawingStakeId === stake.stakeId ? t('cz.node.withdrawing') : needsFeeApproval ? t('cz.node.approveFeeBeforeWithdraw') : t('cz.node.withdrawPrincipal')}
+                    {activeRelease ? t('cz.node.cannotWithdraw') : !stake.isUnlocked ? '待解锁' : withdrawingStakeId === stake.stakeId ? t('cz.node.withdrawing') : needsFeeApproval ? t('cz.node.approveFeeBeforeWithdraw') : t('cz.node.withdrawPrincipal')}
                   </button>
                 </div>
               ))
