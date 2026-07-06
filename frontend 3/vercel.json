@@ -2,9 +2,10 @@
   "build": {
     "env": {
       "VITE_CHAIN_ID": "0x38",
-      "VITE_NBT_TOKEN": "0x2E38Df5650108378c9432d0cEe06A4B28cC6Cf99",
-      "VITE_STAKING_BANK": "0xC84A22989bE328e2caaB41F1fE6Bc8Ed78004d04",
-      "VITE_NBT_PAIR": ""
+      "VITE_NBT_TOKEN": "0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04",
+      "VITE_STAKING_BANK": "0x903fcce5d67648FBE6Dccc9806e3bd7D303380fD",
+      "VITE_NBT_PAIR": "",
+      "VITE_FEE_TOKEN": ""
     }
   },
   "rewrites": [
