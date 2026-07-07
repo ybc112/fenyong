@@ -27,6 +27,7 @@ export default function ReferralPage({
   const [loadingReferrals, setLoadingReferrals] = useState(false);
   const [isApprovingFee, setIsApprovingFee] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
+  const [manualCopyLink, setManualCopyLink] = useState(null);
 
   const stakingContract = contracts?.stakingBank;
 
@@ -36,17 +37,61 @@ export default function ReferralPage({
       : {}
   );
 
+  // 多端兜底复制：
+  // 1) 优先 navigator.clipboard（需要 secure context + 用户手势，微信/微博/Twitter 等内嵌 WebView 常被禁用）
+  // 2) 退回 document.execCommand('copy') + 隐藏 textarea（兼容老 WebView / 非安全上下文）
+  // 3) 仍失败时弹出"手动复制"弹层，让用户长按选择
+  const fallbackCopy = (text) => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.top = '0';
+      ta.style.left = '0';
+      ta.style.width = '1px';
+      ta.style.height = '1px';
+      ta.style.opacity = '0';
+      ta.style.pointerEvents = 'none';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  };
+
   const copyReferralLink = async () => {
     if (!account) return;
     const link = `${window.location.origin}?ref=${account}`;
-    try {
-      await navigator.clipboard.writeText(link);
+
+    let success = false;
+    // 1) Clipboard API
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(link);
+        success = true;
+      } catch {
+        success = false;
+      }
+    }
+    // 2) execCommand fallback
+    if (!success) {
+      success = fallbackCopy(link);
+    }
+
+    if (success) {
       setCopied(true);
       toast.success(t('cz.toast.linkCopied'));
       setTimeout(() => setCopied(false), 2000);
-    } catch {
-      toast.error(`${t('cz.toast.copyFailed')} ${link}`);
+      return;
     }
+    // 3) 手动复制兜底
+    setManualCopyLink(link);
   };
 
   const approveFeeToken = async () => {
@@ -222,6 +267,35 @@ export default function ReferralPage({
           )}
         </motion.div>
       </section>
+
+      {manualCopyLink && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => setManualCopyLink(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-[#111827] border border-white/10 p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-white mb-1">{t('cz.toast.manualCopyTitle')}</h3>
+            <p className="text-sm text-white/55 mb-4">{t('cz.toast.manualCopyHint')}</p>
+            <div
+              className="break-all rounded-xl bg-white/5 border border-white/10 p-3 text-[#00D9A5] text-sm font-mono select-all"
+              style={{ WebkitUserSelect: 'all', userSelect: 'all' }}
+            >
+              {manualCopyLink}
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={() => setManualCopyLink(null)}
+                className="px-4 py-2 rounded-lg bg-white/10 text-white hover:bg-white/20"
+              >
+                {t('cz.toast.manualCopyClose')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
