@@ -77,6 +77,7 @@ function App() {
     checkAdmin();
   }, [account, contracts.stakingBank, contracts.nbtToken]);
 
+  // 读取 URL / localStorage 中的待绑定推荐人
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const ref = urlParams.get('ref');
@@ -92,15 +93,18 @@ function App() {
     }
   }, []);
 
+  // 当钱包连接后检查是否和自己是同一人，或链上已绑定
   useEffect(() => {
     const checkReferrer = async () => {
       if (!account || !pendingReferrer || !contracts.stakingBank) return;
 
       try {
+        // 不能推荐自己
         if (pendingReferrer.toLowerCase() === account.toLowerCase()) {
           toast.error(t('toast.cannotReferSelf'));
           localStorage.removeItem('referrer');
           setPendingReferrer(null);
+          setShowReferrerModal(false);
           return;
         }
 
@@ -108,16 +112,19 @@ function App() {
         try {
           hasReferrer = await contracts.stakingBank.hasReferrer(account);
         } catch {
+          // 如果读不到 hasReferrer，保守认为已有推荐人，避免弹窗
           hasReferrer = true;
         }
 
         if (hasReferrer) {
-          localStorage.removeItem('referrer');
+          // 链上已绑定：不清空 localStorage（保留给未连接的钱包/后续新用户使用）
           setPendingReferrer(null);
+          setShowReferrerModal(false);
           return;
         }
 
-        setShowReferrerModal(false);
+        // 未绑定且 pendingReferrer 有效：弹出绑定确认
+        setShowReferrerModal(true);
       } catch (err) {
         console.error('Check referrer error:', err);
       }
@@ -171,6 +178,7 @@ function App() {
   };
 
   const handleCancelBind = () => {
+    // 取消绑定：只清空 localStorage 和 pendingReferrer，不再弹窗
     localStorage.removeItem('referrer');
     setPendingReferrer(null);
     setShowReferrerModal(false);
