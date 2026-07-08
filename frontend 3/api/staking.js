@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const { ethers } = require('ethers');
 
 const DEFAULT_STAKING_BANK = '0x903fcce5d67648FBE6Dccc9806e3bd7D303380fD';
@@ -37,6 +39,41 @@ const cacheStore = globalThis.__czStakingCache || {
   snapshots: new Map(),
 };
 globalThis.__czStakingCache = cacheStore;
+
+const CACHE_DIR = process.env.STAKING_CACHE_DIR || process.env.CACHE_DIR || '';
+const FILE_CACHE_MAX_AGE_MS = Number(process.env.STAKING_FILE_CACHE_MAX_AGE_MS || 24 * 60 * 60 * 1000);
+
+const cacheFilePath = (key) => {
+  if (!CACHE_DIR) return '';
+  const name = Buffer.from(key).toString('base64url');
+  return path.join(CACHE_DIR, `${name}.json`);
+};
+
+const readFileCache = (key) => {
+  const filePath = cacheFilePath(key);
+  if (!filePath) return null;
+  try {
+    if (!fs.existsSync(filePath)) return null;
+    const cached = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    if (!cached?.timestamp || !cached?.data) return null;
+    if (Date.now() - cached.timestamp > FILE_CACHE_MAX_AGE_MS) return null;
+    return cached;
+  } catch (error) {
+    console.warn('read staking file cache failed:', error?.message || error);
+    return null;
+  }
+};
+
+const writeFileCache = (key, cached) => {
+  const filePath = cacheFilePath(key);
+  if (!filePath) return;
+  try {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, `${JSON.stringify(cached)}\n`);
+  } catch (error) {
+    console.warn('write staking file cache failed:', error?.message || error);
+  }
+};
 
 const rpcUrls = () => {
   const configured = process.env.BSC_RPC_URLS || process.env.RPC_URLS || '';
@@ -259,7 +296,11 @@ const getCachedSnapshot = async (account, refresh) => {
   const key = account ? `user:${account.toLowerCase()}` : 'public';
   const ttl = account ? USER_CACHE_MS : PUBLIC_CACHE_MS;
   const now = Date.now();
-  const cached = cacheStore.snapshots.get(key);
+  let cached = cacheStore.snapshots.get(key);
+  if (!cached) {
+    cached = readFileCache(key);
+    if (cached) cacheStore.snapshots.set(key, cached);
+  }
 
   if (!refresh && cached && now - cached.timestamp <= ttl) {
     return {
@@ -275,7 +316,9 @@ const getCachedSnapshot = async (account, refresh) => {
 
   try {
     const data = await readSnapshot(account);
-    cacheStore.snapshots.set(key, { timestamp: now, data });
+    const nextCache = { timestamp: Date.now(), data };
+    cacheStore.snapshots.set(key, nextCache);
+    writeFileCache(key, nextCache);
     return data;
   } catch (error) {
     if (cached) {

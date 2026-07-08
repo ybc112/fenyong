@@ -1,0 +1,19 @@
+[Unit]
+Description=CZ staking data API
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/cz-api
+ExecStart=/usr/bin/node /opt/cz-api/server.js
+Restart=always
+RestartSec=3
+User=root
+Environment=NODE_ENV=production
+Environment=PORT=18090
+Environment=CACHE_DIR=/opt/cz-api/cache
+Environment=STAKING_CACHE_DIR=/opt/cz-api/cache
+Environment=BSC_RPC_URLS=https://bsc.publicnode.com,https://bsc-dataseed.binance.org/,https://bsc-dataseed1.binance.org/,https://bsc-dataseed2.binance.org/,https://bsc.blockpi.network/v1/rpc/public,https://rpc.ankr.com/bsc
+
+[Install]
+WantedBy=multi-user.target
