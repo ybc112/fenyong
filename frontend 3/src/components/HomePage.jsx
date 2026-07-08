@@ -10,8 +10,9 @@ export default function HomePage({ onPageChange, stakingData }) {
   const stats = [
     { label: t('cz.home.statStaked'), value: miningStatus?.totalStaked || '0', suffix: 'CZ', icon: <FiTrendingUp /> },
     { label: t('cz.home.statDistributed'), value: miningStatus?.totalDistributed || '0', suffix: 'CZ', icon: <FiGift /> },
-    { label: t('cz.home.statNodes'), value: miningStatus?.rankedNodeCount || 0, suffix: t('cz.common.nodes'), icon: <FiUsers /> },
+    { label: t('cz.home.statNodes'), value: miningStatus?.rankedNodeCount ?? 0, suffix: t('cz.common.nodes'), icon: <FiUsers /> },
   ];
+  const isLoading = stakingData?.loading !== false;
 
   const bands = [
     { rank: t('cz.home.bandTop10'), share: '50%', note: t('cz.home.noteCore') },
@@ -84,8 +85,14 @@ export default function HomePage({ onPageChange, stakingData }) {
               <span className="text-white/45 text-sm">{stat.label}</span>
             </div>
             <div className="text-xl sm:text-3xl font-bold text-white">
-              {formatNumber(stat.value, 4)}
-              <span className="text-white/40 text-sm ml-1">{stat.suffix}</span>
+              {isLoading ? (
+                <span className="inline-block w-8 h-4 bg-white/10 rounded animate-pulse" />
+              ) : (
+                <>
+                  {formatNumber(stat.value, 4)}
+                  <span className="text-white/40 text-sm ml-1">{stat.suffix}</span>
+                </>
+              )}
             </div>
           </motion.div>
         ))}

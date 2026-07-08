@@ -35,16 +35,18 @@ function App() {
   } = useWallet();
 
   const contracts = useContracts(signer, provider);
-  const stakingData = useStakingBank(contracts.stakingBank, account);
-  const tokenFeeData = useTokenFeeConfig(contracts.nbtToken, account);
-  const { balance: tokenBalance, refetch: refetchTokenBalance } = useTokenBalance(contracts.nbtToken, account);
+
+  // provider 还没初始化好时，不要传入空合约读取数据
+  const stakingData = useStakingBank(provider ? contracts.stakingBank : null, account);
+  const tokenFeeData = useTokenFeeConfig(provider ? contracts.nbtToken : null, account);
+  const { balance: tokenBalance, refetch: refetchTokenBalance } = useTokenBalance(provider ? contracts.nbtToken : null, account);
   const { allowance: stakingAllowance, refetch: refetchStakingAllowance } = useAllowance(
-    contracts.nbtToken,
+    provider ? contracts.nbtToken : null,
     account,
     CONTRACTS.STAKING_BANK
   );
   const { allowance: feeAllowance, refetch: refetchFeeAllowance } = useAllowance(
-    contracts.feeToken,
+    provider ? contracts.feeToken : null,
     account,
     CONTRACTS.STAKING_BANK
   );
@@ -333,6 +335,14 @@ function App() {
           },
         }}
       />
+
+      {walletError && (
+        <div className="fixed top-20 left-0 right-0 z-40 px-4">
+          <div className="max-w-xl mx-auto rounded-xl bg-red-500/20 border border-red-500/40 p-3 text-sm text-white text-center">
+            {walletError}
+          </div>
+        </div>
+      )}
 
       <Header
         account={account}

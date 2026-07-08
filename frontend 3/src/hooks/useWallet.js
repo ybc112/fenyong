@@ -3,12 +3,23 @@ import { ethers } from 'ethers';
 import { CURRENT_NETWORK, EXPECTED_CHAIN_ID } from '../utils/constants';
 
 // 创建默认的只读 Provider（用于未连接钱包时读取链上数据）
-const createDefaultProvider = () => {
-  // 使用多个 RPC 节点，提高可靠性
+// 依次尝试多个 RPC，直到有一个成功，避免单个节点被墙导致全站不可用
+const createDefaultProvider = async () => {
   const rpcUrls = CURRENT_NETWORK.rpcUrls;
-  // 随机选择一个 RPC 节点，避免单点故障
-  const randomRpc = rpcUrls[Math.floor(Math.random() * rpcUrls.length)];
-  return new ethers.JsonRpcProvider(randomRpc);
+  const errors = [];
+  for (const url of rpcUrls) {
+    try {
+      const provider = new ethers.JsonRpcProvider(url);
+      // 用 getNetwork 做快速连通性测试
+      await provider.getNetwork();
+      return provider;
+    } catch (err) {
+      errors.push(`${url}: ${err?.message || err}`);
+    }
+  }
+  console.error('All RPC nodes failed:', errors);
+  // 兜底：返回第一个，让上层有对象可用，但后续调用会继续失败并给出提示
+  return new ethers.JsonRpcProvider(rpcUrls[0]);
 };
 
 const parseChainId = (value) => {
@@ -39,8 +50,27 @@ export function useWallet() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState(null);
 
-  // 默认只读 Provider（始终可用）
-  const defaultProvider = useMemo(() => createDefaultProvider(), []);
+  const [defaultProvider, setDefaultProvider] = useState(null);
+  const [providerError, setProviderError] = useState(null);
+
+  // 初始化默认只读 Provider，带错误提示
+  useEffect(() => {
+    let cancelled = false;
+    createDefaultProvider()
+      .then((p) => {
+        if (!cancelled) {
+          setDefaultProvider(p);
+          setProviderError(null);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Failed to initialize default provider:', err);
+          setProviderError('无法连接到 BSC 节点，请检查网络或开启 VPN');
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   // Read calls should always use the configured target network.
   const provider = defaultProvider;
@@ -198,7 +228,7 @@ export function useWallet() {
     isConnecting,
     isConnected: !!account,
     isCorrectNetwork,
-    error,
+    error: error || providerError,
     connect,
     disconnect,
     switchNetwork,
