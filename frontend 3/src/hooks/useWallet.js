@@ -72,8 +72,9 @@ export function useWallet() {
     return () => { cancelled = true; };
   }, []);
 
-  // Read calls should always use the configured target network.
-  const provider = defaultProvider;
+  // 读数据优先使用钱包自带的 Provider（MetaMask/TP/BitKeep 的 RPC 通常更稳定），
+  // 没连钱包时才用默认的只读 Provider。
+  const provider = walletProvider || defaultProvider;
 
   // 断开连接
   const disconnect = useCallback(() => {
