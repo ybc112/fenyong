@@ -22,10 +22,10 @@ export default function HomePage({ onPageChange, stakingData }) {
   ];
 
   return (
-    <div className="space-y-10 md:space-y-16">
-      <section className="relative min-h-[72vh] flex items-center">
-        <div className="absolute inset-0 overflow-hidden rounded-[2rem]">
-          <img src="/cz-logo.png" alt="CZ" className="absolute right-[-90px] top-1/2 -translate-y-1/2 w-[420px] h-[420px] md:w-[620px] md:h-[620px] rounded-full object-cover opacity-25 blur-[1px]" />
+    <div className="space-y-7 md:space-y-16">
+      <section className="relative overflow-hidden rounded-2xl md:rounded-[2rem] min-h-0 md:min-h-[72vh] flex items-center py-6 sm:py-10 md:py-0">
+        <div className="absolute inset-0 overflow-hidden rounded-2xl md:rounded-[2rem]">
+          <img src="/cz-logo.png" alt="CZ" className="absolute right-[-120px] top-[42%] -translate-y-1/2 w-[360px] h-[360px] sm:right-[-90px] sm:w-[420px] sm:h-[420px] md:w-[620px] md:h-[620px] rounded-full object-cover opacity-20 md:opacity-25 blur-[1px]" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#0B1120] via-[#0B1120]/90 to-[#0B1120]/40" />
         </div>
 
@@ -33,64 +33,64 @@ export default function HomePage({ onPageChange, stakingData }) {
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7 }}
-          className="relative max-w-4xl px-2 md:px-6"
+          className="relative w-full max-w-4xl px-4 md:px-6"
         >
-          <div className="badge-glow mb-7">
+          <div className="badge-glow mb-4 md:mb-7">
             <FiCheckCircle className="w-4 h-4 mr-2" />
             {t('cz.home.badge')}
           </div>
 
-          <h1 className="text-4xl sm:text-6xl md:text-7xl font-bold leading-tight mb-6">
+          <h1 className="text-[2.15rem] sm:text-6xl md:text-7xl font-bold leading-[1.08] mb-4 md:mb-6">
             <span className="text-white">Crypto Zenith</span>
             <br />
             <span className="text-gradient-gold">{t('cz.home.title2')}</span>
           </h1>
 
-          <p className="text-lg sm:text-2xl text-white/65 leading-relaxed max-w-3xl mb-8">
+          <p className="text-base sm:text-2xl text-white/65 leading-relaxed max-w-3xl mb-5 md:mb-8">
             {t('cz.home.intro1')}
             <br />
             {t('cz.home.intro2')}
           </p>
 
-          <div className="flex flex-wrap gap-4">
-            <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => onPageChange('token-mining')} className="btn-premium">
-              <span className="flex items-center gap-2">{t('cz.home.viewRank')} <FiArrowRight className="w-5 h-5" /></span>
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:gap-4">
+            <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => onPageChange('token-mining')} className="btn-premium w-full sm:w-auto">
+              <span className="flex items-center justify-center gap-2 whitespace-nowrap">{t('cz.home.viewRank')} <FiArrowRight className="w-5 h-5" /></span>
             </motion.button>
-            <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => onPageChange('referral')} className="btn-ghost">
-              <span className="flex items-center gap-2"><FiUsers className="w-5 h-5" /> {t('cz.home.inviteFriends')}</span>
+            <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => onPageChange('referral')} className="btn-ghost w-full sm:w-auto">
+              <span className="flex items-center justify-center gap-2 whitespace-nowrap"><FiUsers className="w-5 h-5" /> {t('cz.home.inviteFriends')}</span>
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.96 }}
               onClick={() => onPageChange('token-mining')}
-              className="btn-ghost border-[#FFB800]/50 bg-[#FFB800]/10 text-[#FFB800] hover:border-[#FFB800] hover:bg-[#FFB800]/20 hover:shadow-[0_0_30px_rgba(255,184,0,0.18)]"
+              className="btn-ghost w-full sm:w-auto col-span-2 sm:col-span-1 border-[#FFB800]/50 bg-[#FFB800]/10 text-[#FFB800] hover:border-[#FFB800] hover:bg-[#FFB800]/20 hover:shadow-[0_0_30px_rgba(255,184,0,0.18)]"
             >
-              <span className="flex items-center gap-2"><FiZap className="w-5 h-5" /> {t('cz.home.goStake')}</span>
+              <span className="flex items-center justify-center gap-2 whitespace-nowrap"><FiZap className="w-5 h-5" /> {t('cz.home.goStake')}</span>
             </motion.button>
           </div>
         </motion.div>
       </section>
 
-      <section className="grid grid-cols-3 gap-3 md:gap-6">
+      <section className="grid grid-cols-2 sm:grid-cols-3 gap-3 md:gap-6">
         {stats.map((stat, index) => (
           <motion.div
             key={stat.label}
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
-            className="stat-card-premium"
+            className={`stat-card-premium min-w-0 ${index === 2 ? 'col-span-2 sm:col-span-1' : ''}`}
           >
-            <div className="flex items-center gap-2 text-[#FFB800] mb-3">
-              {stat.icon}
-              <span className="text-white/45 text-sm">{stat.label}</span>
+            <div className="flex items-start gap-2 text-[#FFB800] mb-2 md:mb-3">
+              <span className="shrink-0 mt-0.5">{stat.icon}</span>
+              <span className="text-white/45 text-xs sm:text-sm leading-snug">{stat.label}</span>
             </div>
-            <div className="text-xl sm:text-3xl font-bold text-white">
+            <div className="text-xl sm:text-3xl font-bold text-white number-display break-words">
               {isLoading ? (
                 <span className="inline-block w-8 h-4 bg-white/10 rounded animate-pulse" />
               ) : (
                 <>
                   {formatNumber(stat.value, 4)}
-                  <span className="text-white/40 text-sm ml-1">{stat.suffix}</span>
+                  <span className="text-white/40 text-xs sm:text-sm ml-1">{stat.suffix}</span>
                 </>
               )}
             </div>
@@ -101,11 +101,11 @@ export default function HomePage({ onPageChange, stakingData }) {
       <section className="grid lg:grid-cols-[0.9fr_1.1fr] gap-6">
         <div className="neon-card">
           <div className="neon-card-inner h-full">
-            <h2 className="text-2xl font-bold text-white mb-5 flex items-center gap-3">
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-5 flex items-center gap-3">
               <FiZap className="text-[#FFB800]" />
               {t('cz.home.mechanismTitle')}
             </h2>
-            <div className="space-y-4 text-white/65 leading-relaxed">
+            <div className="space-y-3 sm:space-y-4 text-sm sm:text-base text-white/65 leading-relaxed">
               <p>{t('cz.home.mechanism1')}</p>
               <p>{t('cz.home.mechanism2')}</p>
               <p>{t('cz.home.mechanism3')}</p>
@@ -114,7 +114,7 @@ export default function HomePage({ onPageChange, stakingData }) {
         </div>
 
         <div className="glass-premium p-5 md:p-6">
-          <h2 className="text-2xl font-bold text-white mb-5 flex items-center gap-3">
+          <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-5 flex items-center gap-3">
             <FiAward className="text-[#00D9A5]" />
             {t('cz.home.monthlyTitle')}
           </h2>
