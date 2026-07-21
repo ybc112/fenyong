@@ -16,7 +16,7 @@ function App() {
   const [showReferrerModal, setShowReferrerModal] = useState(false);
   const [isBindingReferrer, setIsBindingReferrer] = useState(false);
 
-  const { t } = useLanguage();
+  const { t, language, toggleLanguage } = useLanguage();
   const {
     account,
     provider,
