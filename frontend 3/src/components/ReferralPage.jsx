@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
-import { FiAward, FiCheck, FiCopy, FiExternalLink, FiGift, FiRefreshCw, FiShare2, FiUserPlus, FiUsers } from 'react-icons/fi';
+import { FiAward, FiCheck, FiCopy, FiExternalLink, FiGift, FiRefreshCw, FiShare2, FiTrendingUp, FiUserPlus, FiUsers } from 'react-icons/fi';
 import { CONTRACTS, formatAddress, formatNumber, getExplorerAddressUrl, parseContractError } from '../utils/constants';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -11,36 +11,22 @@ const PAGE_SIZE = 20;
 export default function ReferralPage({
   account,
   stakingData,
-  feeAllowance,
   contracts,
   onRefresh,
 }) {
   const { t } = useLanguage();
   const userInfo = stakingData?.userInfo;
-  const feeAmount = stakingData?.interactionFeeConfig?.fee || '0.4';
-  const isNativeFee = stakingData?.interactionFeeConfig?.feeToken === ethers.ZeroAddress || !CONTRACTS.FEE_TOKEN;
-  const needsFeeApproval = !isNativeFee && parseFloat(feeAllowance || '0') < parseFloat(feeAmount || '0');
   const [copied, setCopied] = useState(false);
   const [referrals, setReferrals] = useState([]);
   const [offset, setOffset] = useState(0);
   const [total, setTotal] = useState(0);
   const [loadingReferrals, setLoadingReferrals] = useState(false);
-  const [isApprovingFee, setIsApprovingFee] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
+  const [isClaimingInterest, setIsClaimingInterest] = useState(false);
   const [manualCopyLink, setManualCopyLink] = useState(null);
 
   const stakingContract = contracts?.stakingBank;
 
-  const feeTxOptions = () => (
-    isNativeFee && parseFloat(feeAmount || '0') > 0
-      ? { value: ethers.parseEther(feeAmount) }
-      : {}
-  );
-
-  // 多端兜底复制：
-  // 1) 优先 navigator.clipboard（需要 secure context + 用户手势，微信/微博/Twitter 等内嵌 WebView 常被禁用）
-  // 2) 退回 document.execCommand('copy') + 隐藏 textarea（兼容老 WebView / 非安全上下文）
-  // 3) 仍失败时弹出"手动复制"弹层，让用户长按选择
   const fallbackCopy = (text) => {
     try {
       const ta = document.createElement('textarea');
@@ -70,7 +56,6 @@ export default function ReferralPage({
     const link = `${window.location.origin}?ref=${account}`;
 
     let success = false;
-    // 1) Clipboard API
     if (navigator.clipboard && window.isSecureContext) {
       try {
         await navigator.clipboard.writeText(link);
@@ -79,7 +64,6 @@ export default function ReferralPage({
         success = false;
       }
     }
-    // 2) execCommand fallback
     if (!success) {
       success = fallbackCopy(link);
     }
@@ -90,31 +74,14 @@ export default function ReferralPage({
       setTimeout(() => setCopied(false), 2000);
       return;
     }
-    // 3) 手动复制兜底
     setManualCopyLink(link);
-  };
-
-  const approveFeeToken = async () => {
-    if (!contracts?.writeFeeToken || !CONTRACTS.STAKING_BANK) return;
-    setIsApprovingFee(true);
-    try {
-      const tx = await contracts.writeFeeToken.approve(CONTRACTS.STAKING_BANK, ethers.MaxUint256);
-      toast.loading(t('cz.toast.approveFee'), { id: 'approveFeeRef' });
-      await tx.wait();
-      toast.success(t('cz.toast.approveFeeSuccess'), { id: 'approveFeeRef' });
-      onRefresh?.();
-    } catch (err) {
-      toast.error(parseContractError(err), { id: 'approveFeeRef' });
-    } finally {
-      setIsApprovingFee(false);
-    }
   };
 
   const claimRewards = async () => {
     if (!contracts?.writeStakingBank) return;
     setIsClaiming(true);
     try {
-      const tx = await contracts.writeStakingBank.claimNodeRewards(feeTxOptions());
+      const tx = await contracts.writeStakingBank.claimRewards();
       toast.loading(t('cz.toast.claiming'), { id: 'claimRefPage' });
       await tx.wait();
       toast.success(t('cz.toast.claimSuccess'), { id: 'claimRefPage' });
@@ -123,6 +90,22 @@ export default function ReferralPage({
       toast.error(parseContractError(err), { id: 'claimRefPage' });
     } finally {
       setIsClaiming(false);
+    }
+  };
+
+  const claimInterest = async () => {
+    if (!contracts?.writeStakingBank) return;
+    setIsClaimingInterest(true);
+    try {
+      const tx = await contracts.writeStakingBank.claimInterest();
+      toast.loading(t('cz.toast.claimingInterest'), { id: 'claimInterestRefPage' });
+      await tx.wait();
+      toast.success(t('cz.toast.claimInterestSuccess'), { id: 'claimInterestRefPage' });
+      onRefresh?.();
+    } catch (err) {
+      toast.error(parseContractError(err), { id: 'claimInterestRefPage' });
+    } finally {
+      setIsClaimingInterest(false);
     }
   };
 
@@ -151,27 +134,51 @@ export default function ReferralPage({
 
   return (
     <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-[#111827]">
-        <div className="absolute inset-0 bg-gradient-to-r from-[#FFB800]/15 via-[#00D9A5]/10 to-transparent" />
-        <div className="relative p-5 sm:p-8 flex flex-col md:flex-row md:items-center gap-6">
-          <img src="/cz-logo.png" alt="CZ" className="w-20 h-20 rounded-full object-cover shadow-lg shadow-[#FFB800]/30" />
-          <div className="flex-1">
-            <h1 className="text-2xl sm:text-4xl font-bold text-white">{t('cz.referral.title')}</h1>
-            <p className="text-white/55 mt-2">{t('cz.referral.subtitle')}</p>
+      {/* 邀请奖励说明 */}
+      <section className="grid md:grid-cols-3 gap-4">
+        {[
+          { icon: <FiUserPlus />, title: t('cz.referral.directRewardTitle'), desc: t('cz.referral.directRewardDesc') },
+          { icon: <FiUsers />, title: t('cz.referral.indirectRewardTitle'), desc: t('cz.referral.indirectRewardDesc') },
+          { icon: <FiAward />, title: t('cz.referral.teamRewardTitle'), desc: t('cz.referral.teamRewardDesc') },
+        ].map((card) => (
+          <div key={card.title} className="stat-card-premium">
+            <div className="flex items-center gap-2 text-[#FFB800] mb-3">
+              {card.icon}
+              <span className="text-white font-medium">{card.title}</span>
+            </div>
+            <p className="text-sm text-white/50 leading-relaxed">{card.desc}</p>
           </div>
-          <button onClick={copyReferralLink} disabled={!account} className="btn-premium flex items-center justify-center gap-2 disabled:opacity-50">
-            {copied ? <FiCheck className="w-5 h-5" /> : <FiCopy className="w-5 h-5" />}
-            <span>{copied ? t('cz.common.copied') : t('cz.common.copyExclusiveLink')}</span>
-          </button>
-        </div>
+        ))}
       </section>
 
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 顶部操作区 */}
+      <section className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-white flex items-center gap-3">
+            <FiUsers className="text-[#FFB800]" />
+            {t('cz.referral.title')}
+          </h1>
+          <p className="text-white/50 mt-1">{t('cz.referral.subtitle')}</p>
+        </div>
+        <button
+          onClick={copyReferralLink}
+          disabled={!account}
+          className="btn-premium flex items-center justify-center gap-2 disabled:opacity-50 whitespace-nowrap"
+        >
+          {copied ? <FiCheck className="w-5 h-5" /> : <FiCopy className="w-5 h-5" />}
+          <span>{copied ? t('cz.common.copied') : t('cz.common.copyExclusiveLink')}</span>
+        </button>
+      </section>
+
+      {/* 核心数据卡片 */}
+      <section className="grid grid-cols-2 lg:grid-cols-6 gap-4">
         {[
-          { label: t('cz.referral.myRank'), value: userInfo?.rank ? `#${userInfo.rank}` : '-', suffix: '', icon: <FiAward /> },
-          { label: t('cz.referral.directInvites'), value: userInfo?.directReferrals || 0, suffix: t('cz.common.person'), icon: <FiUserPlus /> },
-          { label: t('cz.referral.referralVolume'), value: userInfo?.referralStakeVolume || 0, suffix: 'U', icon: <FiUsers /> },
-          { label: t('cz.referral.pendingRewards'), value: userInfo?.pendingRewards || 0, suffix: 'CZ', icon: <FiGift /> },
+          { label: t('cz.referral.inviteRank'), value: '-', suffix: '', icon: <FiAward /> },
+          { label: t('cz.referral.directInvites'), value: userInfo?.referralCount || 0, suffix: t('cz.common.person'), icon: <FiUserPlus /> },
+          { label: t('cz.referral.teamEarnings'), value: userInfo?.purchased || 0, suffix: 'USDT', icon: <FiTrendingUp /> },
+          { label: t('cz.referral.pendingRewards'), value: userInfo?.pendingRewards || 0, suffix: 'USDT', icon: <FiGift /> },
+          { label: t('cz.referral.totalClaimed'), value: userInfo?.claimed || 0, suffix: 'USDT', icon: <FiShare2 /> },
+          { label: t('cz.referral.holdingInterest'), value: userInfo?.pendingInterest || 0, suffix: t('cz.common.tokenSymbol'), icon: <FiTrendingUp /> },
         ].map((stat) => (
           <div key={stat.label} className="stat-card-premium">
             <div className="flex items-center gap-2 text-[#FFB800] mb-3">
@@ -186,36 +193,53 @@ export default function ReferralPage({
         ))}
       </section>
 
+      {/* 收益明细 + 邀请列表 */}
       <section className="grid lg:grid-cols-[0.9fr_1.1fr] gap-6">
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="neon-card">
           <div className="neon-card-inner">
-            <h2 className="text-xl font-bold mb-5 flex items-center gap-2">
+            <h2 className="text-xl font-bold mb-5 flex items-center gap-2 text-white">
               <FiShare2 className="text-[#00D9A5]" />
-              {t('cz.referral.nodeRewards')}
+              {t('cz.referral.rewardDetails')}
             </h2>
 
             <div className="space-y-3 mb-5">
               <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between">
-                <span className="text-white/50">{t('cz.referral.invitePending')}</span>
-                <span className="text-[#00D9A5] font-bold">{formatNumber(userInfo?.pendingInviteRewards, 4)} CZ</span>
+                <span className="text-white/50">{t('cz.referral.directPending')}</span>
+                <span className="text-[#00D9A5] font-bold">{formatNumber(userInfo?.directReward, 4)} USDT</span>
               </div>
               <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between">
-                <span className="text-white/50">{t('cz.referral.rankPending')}</span>
-                <span className="text-[#FFB800] font-bold">{formatNumber(userInfo?.pendingRankRewards, 4)} CZ</span>
+                <span className="text-white/50">{t('cz.referral.indirectPending')}</span>
+                <span className="text-[#FFB800] font-bold">{formatNumber(userInfo?.indirectReward, 4)} USDT</span>
               </div>
               <div className="p-4 rounded-xl bg-white/5 border border-white/5 flex justify-between">
-                <span className="text-white/50">{t('cz.referral.totalClaimed')}</span>
-                <span className="text-white font-bold">{formatNumber(userInfo?.totalClaimed, 4)} CZ</span>
+                <span className="text-white/50">{t('cz.referral.teamPending')}</span>
+                <span className="text-[#00A3FF] font-bold">{formatNumber(userInfo?.teamReward, 4)} USDT</span>
               </div>
             </div>
 
             <button
-              onClick={needsFeeApproval ? approveFeeToken : claimRewards}
-              disabled={!account || isApprovingFee || isClaiming || (!needsFeeApproval && parseFloat(userInfo?.pendingRewards || '0') <= 0)}
+              onClick={claimRewards}
+              disabled={!account || isClaiming || parseFloat(userInfo?.pendingRewards || '0') <= 0}
               className="w-full btn-premium disabled:opacity-50"
             >
-              <span>{needsFeeApproval ? t('cz.referral.approveFee') : isClaiming ? t('cz.referral.claiming') : t('cz.referral.claimRewards')}</span>
+              <span>{isClaiming ? t('cz.referral.claiming') : t('cz.referral.claimRewards')}</span>
             </button>
+
+            <div className="mt-4 pt-4 border-t border-white/10">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-white/50">{t('cz.referral.holdingInterestPending')}</span>
+                <span className="text-[#00D9A5] font-bold">
+                  {formatNumber(userInfo?.pendingInterest || 0, 4)} {t('cz.common.tokenSymbol')}
+                </span>
+              </div>
+              <button
+                onClick={claimInterest}
+                disabled={!account || isClaimingInterest || parseFloat(userInfo?.pendingInterest || '0') <= 0}
+                className="w-full btn-premium disabled:opacity-50"
+              >
+                <span>{isClaimingInterest ? t('cz.referral.claimingInterest') : t('cz.referral.claimInterest')}</span>
+              </button>
+            </div>
           </div>
         </motion.div>
 

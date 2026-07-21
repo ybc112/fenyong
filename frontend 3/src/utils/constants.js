@@ -1,7 +1,7 @@
 const MAINNET_CONTRACTS = {
-  NBT_TOKEN: '0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04',
+  NBT_TOKEN: '0x2922933e6B4a58530634BAEcF983Dd8ac34d4444',
   STAKING_BANK: '0x903fcce5d67648FBE6Dccc9806e3bd7D303380fD',
-  FEE_TOKEN: '',
+  PAYMENT_TOKEN: '0x55d398326f99059fF775485246999027B3197955', // BSC USDT
 };
 
 const STALE_TESTNET_ADDRESSES = new Set([
@@ -22,8 +22,8 @@ const mainnetSafeAddress = (value, fallback) => {
 export const CONTRACTS = {
   NBT_TOKEN: mainnetSafeAddress(import.meta.env.VITE_NBT_TOKEN, MAINNET_CONTRACTS.NBT_TOKEN),
   STAKING_BANK: mainnetSafeAddress(import.meta.env.VITE_STAKING_BANK, MAINNET_CONTRACTS.STAKING_BANK),
+  PAYMENT_TOKEN: mainnetSafeAddress(import.meta.env.VITE_PAYMENT_TOKEN, MAINNET_CONTRACTS.PAYMENT_TOKEN),
   NBT_PAIR: import.meta.env.VITE_NBT_PAIR || '',
-  FEE_TOKEN: MAINNET_CONTRACTS.FEE_TOKEN,
 };
 
 export const NETWORKS = {
@@ -109,30 +109,23 @@ export const CONTRACT_ERRORS = {
   'Cannot refer self': '不能将自己设置为推荐人',
   'Circular referral not allowed': '不允许循环推荐',
   'Invalid referrer': '无效的推荐人',
-  'Invalid tier': '无效的质押档位',
-  'Stake not found': '质押记录不存在',
-  'Stake already withdrawn': '该质押已提取',
-  'Lock period not ended': '锁仓期未结束',
-  'No pending rewards': '暂无待领取收益',
-  'No referral rewards': '暂无推荐奖励',
+  'Invalid amount': '无效的金额',
+  'Invalid price': '无效的代币价格',
+  'No payment received': '未收到 USDT 付款',
+  'Token amount too small': '购买数量太小',
+  'Insufficient sale tokens': '合约待售代币不足',
+  'Insufficient balance': '合约余额不足',
   'No rewards': '暂无可领取奖励',
-  'Compound token mismatch': '当前奖励币不能直接复投',
-  'Monthly release in progress': '月度释放分配中，暂时不能改变排名',
-  'Insufficient invite reward reserve': '邀请奖励储备不足，请先给新版质押合约充值奖励',
   'Referrer mismatch': '推荐人与已绑定地址不一致',
-  'Rewards depleted': '奖励池已耗尽',
-  'Too many active stakes': '活跃质押数量已达上限',
-  'Stake not active': '该质押记录已失效',
-  'Fee too high': '费用设置过高',
-  'Invalid address': '无效的地址',
   'Paused': '合约已暂停',
   'user rejected transaction': '您取消了交易',
   'insufficient funds': '钱包余额不足以支付 Gas 费',
-  'Insufficient BNB fee': 'BNB 交互费不足',
-  'Unexpected BNB': '当前操作不需要附带 BNB',
-  'Native transfer failed': 'BNB 手续费发送失败',
   'execution reverted': '交易执行失败',
   'could not coalesce error': '钱包返回异常，交易可能已经提交，请刷新页面或在钱包交易记录中确认',
+  'OwnableUnauthorizedAccount': '当前钱包无权限执行此操作',
+  'OwnableInvalidOwner': '无效的新 Owner 地址',
+  'NotEnoughBalance': '合约余额不足',
+  'InvalidRecovery': '不能回收该代币',
 };
 
 const collectErrorText = (error, seen = new Set()) => {

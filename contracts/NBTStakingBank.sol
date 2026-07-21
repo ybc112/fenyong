@@ -9,117 +9,53 @@ interface IERC20 {
 }
 
 contract NBTStakingBank {
-    struct UserInfo {
-        uint256 totalStaked;
-        uint256 totalWithdrawn;
-        uint256 stakeCount;
-        uint256 activeStakeCount;
-        address referrer;
-        uint256 directReferrals;
-        uint256 referralStakeVolume;
-        uint256 pendingInviteRewards;
-        uint256 totalInviteClaimed;
-        uint256 pendingRankRewards;
-        uint256 totalRankClaimed;
-        uint256 lockedInviteRewards;
-        uint256 inviteUnlockCursor;
-    }
-
-    struct StakeRecord {
-        uint256 amount;
-        uint256 scoreValue;
-        uint256 startTime;
-        bool active;
-    }
-
-    struct MonthlyRelease {
-        uint256 amount;
-        uint256 totalNodes;
-        uint256 openedAt;
-        uint256 finishedAt;
-        uint256 nextRank;
-        uint256 allocatedAmount;
-        bool finalized;
-    }
-
-    struct InviteRewardLock {
-        address invitee;
-        uint256 stakeId;
-        uint256 amount;
-        uint256 unlockTime;
-    }
-
-    IERC20 public immutable stakingToken;
-    IERC20 public immutable rewardToken;
-    IERC20 public interactionFeeToken;
+    IERC20 public immutable saleToken;
+    IERC20 public immutable paymentToken;
 
     uint256 public constant RATE_BASE = 10_000;
-    uint256 public constant MAX_ACTIVE_STAKES = 50;
-    uint256 public constant MAX_REFERRAL_DEPTH = 20;
-    uint256 public constant LOCK_PERIOD = 15 days;
-    uint256 public constant DEFAULT_INVITE_REWARD = 1_000_000 ether;
-    uint256 public constant DEFAULT_MIN_REFERRAL_STAKE_VALUE = 100 ether;
+    uint256 public constant DIRECT_RATE_BPS = 2_000;   // 20%
+    uint256 public constant INDIRECT_RATE_BPS = 1_000; // 10%
+    uint256 public constant TEAM_RATE_BPS = 500;       // 5%
 
-    uint256 public totalStaked;
-    uint256 public totalRankDistributed;
-    uint256 public totalRankClaimed;
-    uint256 public totalInviteRewardsAccrued;
-    uint256 public totalInviteRewardsClaimed;
-    uint256 public interactionFee;
-    uint256 public inviteReward;
-    uint256 public minReferralStakeValue;
-    uint256 public stakeValueRate;
-    uint256 public startTime;
-    uint256 public currentEpochId;
-    bool public paused;
+    uint256 public tokenPrice;
+    uint256 public totalSold;
+    uint256 public totalUSDTReceived;
+    uint256 public totalRewardsDistributed;
+    uint256 public totalInterestClaimed;
+    uint256 public dailyInterestRateBps = 100; // 1%
 
     address public owner;
     address public pendingOwner;
-    address public feeReceiverA;
-    address public feeReceiverB;
+    address public teamWallet;
+
+    mapping(address => address) public referrerOf;
+    mapping(address => address[]) private _referrals;
+    mapping(address => uint256) public directRewards;
+    mapping(address => uint256) public indirectRewards;
+    mapping(address => uint256) public teamRewards;
+    mapping(address => uint256) public totalPurchased;
+    mapping(address => uint256) public totalClaimed;
+    mapping(address => uint256) public lastInterestClaimTime;
+
+    bool public paused;
     uint256 private _unlocked = 1;
 
-    mapping(address => UserInfo) public userInfo;
-    mapping(address => mapping(uint256 => StakeRecord)) public stakeRecords;
-    mapping(address => bool) public operators;
-    mapping(address => address[]) private _referrals;
-    mapping(address => InviteRewardLock[]) private _inviteRewardLocks;
-    mapping(address => mapping(address => bool)) public qualifiedReferral;
-    mapping(uint256 => MonthlyRelease) public monthlyReleases;
-
-    address[] private _rankedNodes;
-    mapping(address => uint256) private _rankIndexPlusOne;
-
-    event Deposit(address indexed user, address indexed referrer, uint256 indexed stakeId, uint256 amount);
-    event Withdraw(address indexed user, uint256 indexed stakeId, uint256 amount);
+    event Purchased(address indexed buyer, address indexed referrer, uint256 usdtAmount, uint256 tokenAmount);
     event ReferrerSet(address indexed user, address indexed referrer);
-    event ReferralQualified(address indexed referrer, address indexed user, uint256 inviteReward);
-    event InviteRewardUnlocked(address indexed referrer, address indexed invitee, uint256 amount);
-    event NodeScoreUpdated(address indexed node, uint256 score, uint256 rank);
-    event NodeRewardsClaimed(address indexed user, uint256 inviteReward, uint256 rankReward);
-    event NodeRewardsCompounded(address indexed user, uint256 indexed stakeId, uint256 amount);
-    event MonthlyReleaseOpened(uint256 indexed epochId, uint256 amount, uint256 totalNodes);
-    event RankRewardAllocated(uint256 indexed epochId, address indexed node, uint256 rank, uint256 amount);
-    event MonthlyReleaseFinalized(uint256 indexed epochId, uint256 amount);
-    event InteractionFeePaid(address indexed user, address indexed token, uint256 totalFee, address receiverA, address receiverB);
-    event InteractionFeeConfigUpdated(address indexed feeToken, uint256 fee, address indexed receiverA, address indexed receiverB);
-    event InviteRewardUpdated(uint256 reward);
-    event MinReferralStakeValueUpdated(uint256 value);
-    event StakeValueRateUpdated(uint256 rate);
-    event OperatorUpdated(address indexed operator, bool status);
+    event RewardsClaimed(address indexed user, uint256 directAmount, uint256 indirectAmount, uint256 teamAmount);
+    event TokenPriceUpdated(uint256 price);
+    event TeamWalletUpdated(address wallet);
     event Paused();
     event Unpaused();
+    event USDTWithdrawn(address indexed to, uint256 amount);
+    event InterestClaimed(address indexed user, uint256 amount);
+    event InterestRateUpdated(uint256 bps);
+    event InterestPoolFunded(address indexed funder, uint256 amount);
     event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
     event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
-    event WrongTokenRecovered(address indexed token, address indexed to, uint256 amount);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Ownable: caller is not the owner");
-        _;
-    }
-
-    modifier onlyAdmin() {
-        require(msg.sender == owner || operators[msg.sender], "Admin: caller is not admin");
         _;
     }
 
@@ -135,288 +71,133 @@ contract NBTStakingBank {
         _;
     }
 
-    modifier noActiveRelease() {
-        require(!_hasActiveRelease(), "Monthly release in progress");
-        _;
-    }
-
-    receive() external payable {}
-
     constructor(
-        address stakingToken_,
-        address rewardToken_,
-        address interactionFeeToken_,
-        address feeReceiverA_,
-        address feeReceiverB_,
-        uint256 interactionFee_
+        address saleToken_,
+        address paymentToken_,
+        address teamWallet_,
+        uint256 tokenPrice_
     ) {
-        require(stakingToken_ != address(0) && rewardToken_ != address(0), "Invalid token");
-        require(feeReceiverA_ != address(0) && feeReceiverB_ != address(0), "Invalid fee receiver");
-
-        stakingToken = IERC20(stakingToken_);
-        rewardToken = IERC20(rewardToken_);
-        interactionFeeToken = IERC20(interactionFeeToken_);
-        feeReceiverA = feeReceiverA_;
-        feeReceiverB = feeReceiverB_;
-        interactionFee = interactionFee_;
-        inviteReward = DEFAULT_INVITE_REWARD;
-        minReferralStakeValue = DEFAULT_MIN_REFERRAL_STAKE_VALUE;
-        stakeValueRate = 1 ether;
+        require(saleToken_ != address(0) && paymentToken_ != address(0), "Invalid token");
+        require(teamWallet_ != address(0), "Invalid team wallet");
+        require(tokenPrice_ > 0, "Invalid price");
+        saleToken = IERC20(saleToken_);
+        paymentToken = IERC20(paymentToken_);
+        teamWallet = teamWallet_;
+        tokenPrice = tokenPrice_;
         owner = msg.sender;
-        startTime = block.timestamp;
-
         emit OwnershipTransferred(address(0), msg.sender);
-        emit InteractionFeeConfigUpdated(interactionFeeToken_, interactionFee_, feeReceiverA_, feeReceiverB_);
     }
 
-    function stake(uint256 amount, address referrer) external payable nonReentrant whenNotPaused noActiveRelease {
-        require(amount > 0, "Invalid amount");
-        UserInfo storage user = userInfo[msg.sender];
-        require(user.activeStakeCount < MAX_ACTIVE_STAKES, "Too many active stakes");
+    function buy(uint256 usdtAmount, address referrer) external nonReentrant whenNotPaused {
+        require(usdtAmount > 0, "Invalid amount");
 
-        if (user.referrer == address(0) && referrer != address(0)) {
+        if (referrerOf[msg.sender] == address(0) && referrer != address(0)) {
             _setReferrer(msg.sender, referrer);
-        } else if (referrer != address(0) && referrer != user.referrer) {
+        } else if (referrer != address(0) && referrer != referrerOf[msg.sender]) {
             revert("Referrer mismatch");
         }
 
-        _collectInteractionFee(msg.sender);
+        uint256 beforeBalance = paymentToken.balanceOf(address(this));
+        _safeTransferFrom(paymentToken, msg.sender, address(this), usdtAmount);
+        uint256 received = paymentToken.balanceOf(address(this)) - beforeBalance;
+        require(received > 0, "No payment received");
 
-        uint256 beforeBalance = stakingToken.balanceOf(address(this));
-        _safeTransferFrom(stakingToken, msg.sender, address(this), amount);
-        uint256 received = stakingToken.balanceOf(address(this)) - beforeBalance;
-        require(received > 0, "No tokens received");
+        uint256 tokenAmount = received * tokenPrice / 1 ether;
+        require(tokenAmount > 0, "Token amount too small");
+        require(saleToken.balanceOf(address(this)) >= tokenAmount, "Insufficient sale tokens");
 
-        uint256 stakeId = user.stakeCount;
-        uint256 scoreValue = _stakeValue(received);
-        stakeRecords[msg.sender][stakeId] = StakeRecord({
-            amount: received,
-            scoreValue: scoreValue,
-            startTime: block.timestamp,
-            active: true
-        });
+        _safeTransfer(saleToken, msg.sender, tokenAmount);
+        _distributeRewards(msg.sender, received);
 
-        user.stakeCount += 1;
-        user.activeStakeCount += 1;
-        user.totalStaked += received;
-        totalStaked += received;
-
-        address boundReferrer = user.referrer;
-        if (boundReferrer != address(0)) {
-            _qualifyReferral(boundReferrer, msg.sender, stakeId, scoreValue);
-            _increaseNodeScore(boundReferrer, scoreValue);
+        totalSold += tokenAmount;
+        totalUSDTReceived += received;
+        totalPurchased[msg.sender] += tokenAmount;
+        if (lastInterestClaimTime[msg.sender] == 0) {
+            lastInterestClaimTime[msg.sender] = block.timestamp;
         }
 
-        emit Deposit(msg.sender, boundReferrer, stakeId, received);
+        emit Purchased(msg.sender, referrerOf[msg.sender], received, tokenAmount);
     }
 
-    function withdraw(uint256 stakeId) external payable nonReentrant whenNotPaused noActiveRelease {
-        StakeRecord storage record = stakeRecords[msg.sender][stakeId];
-        require(record.active, "Stake not active");
-        require(block.timestamp >= record.startTime + LOCK_PERIOD, "Lock period not ended");
+    function claimRewards() external nonReentrant whenNotPaused {
+        uint256 direct = directRewards[msg.sender];
+        uint256 indirect = indirectRewards[msg.sender];
+        uint256 team = teamRewards[msg.sender];
+        uint256 total = direct + indirect + team;
+        require(total > 0, "No rewards");
 
-        _collectInteractionFee(msg.sender);
+        directRewards[msg.sender] = 0;
+        indirectRewards[msg.sender] = 0;
+        teamRewards[msg.sender] = 0;
+        totalClaimed[msg.sender] += total;
 
-        uint256 amount = record.amount;
-        uint256 scoreValue = record.scoreValue;
-        record.active = false;
-        record.amount = 0;
-        record.scoreValue = 0;
-
-        UserInfo storage user = userInfo[msg.sender];
-        user.activeStakeCount -= 1;
-        user.totalWithdrawn += amount;
-        totalStaked -= amount;
-
-        if (user.referrer != address(0)) {
-            _decreaseNodeScore(user.referrer, scoreValue);
-        }
-
-        _safeTransfer(stakingToken, msg.sender, amount);
-        emit Withdraw(msg.sender, stakeId, amount);
+        _safeTransfer(paymentToken, msg.sender, total);
+        emit RewardsClaimed(msg.sender, direct, indirect, team);
     }
 
-    function setReferrer(address referrer) external payable nonReentrant whenNotPaused noActiveRelease {
-        _collectInteractionFee(msg.sender);
+    function setReferrer(address referrer) external whenNotPaused {
+        require(referrerOf[msg.sender] == address(0), "Already has referrer");
         _setReferrer(msg.sender, referrer);
     }
 
-    function claimNodeRewards() public payable nonReentrant whenNotPaused {
-        _collectInteractionFee(msg.sender);
-        _claimNodeRewards(msg.sender);
+    function pendingInterest(address user) public view returns (uint256) {
+        uint256 lastClaim = lastInterestClaimTime[user];
+        if (lastClaim == 0) return 0;
+        uint256 balance = saleToken.balanceOf(user);
+        uint256 elapsed = block.timestamp - lastClaim;
+        return balance * dailyInterestRateBps * elapsed / (RATE_BASE * 1 days);
     }
 
-    function claimReferralRewards() external payable {
-        claimNodeRewards();
+    function claimInterest() external nonReentrant whenNotPaused {
+        uint256 pending = pendingInterest(msg.sender);
+        require(pending > 0, "No interest");
+        require(saleToken.balanceOf(address(this)) >= pending, "Insufficient interest pool");
+
+        lastInterestClaimTime[msg.sender] = block.timestamp;
+        totalInterestClaimed += pending;
+        _safeTransfer(saleToken, msg.sender, pending);
+        emit InterestClaimed(msg.sender, pending);
     }
 
-    function claimAll() external payable {
-        claimNodeRewards();
+    function setDailyInterestRateBps(uint256 bps) external onlyOwner {
+        require(bps <= RATE_BASE, "Invalid rate");
+        dailyInterestRateBps = bps;
+        emit InterestRateUpdated(bps);
     }
 
-    function compoundNodeRewards(address referrer) external payable nonReentrant whenNotPaused noActiveRelease {
-        require(address(stakingToken) == address(rewardToken), "Compound token mismatch");
-
-        UserInfo storage user = userInfo[msg.sender];
-        require(user.activeStakeCount < MAX_ACTIVE_STAKES, "Too many active stakes");
-
-        if (user.referrer == address(0) && referrer != address(0)) {
-            _setReferrer(msg.sender, referrer);
-        } else if (referrer != address(0) && referrer != user.referrer) {
-            revert("Referrer mismatch");
-        }
-
-        _collectInteractionFee(msg.sender);
-
-        _unlockInviteRewards(msg.sender);
-
-        uint256 inviteAmount = user.pendingInviteRewards;
-        uint256 rankAmount = user.pendingRankRewards;
-        uint256 amount = inviteAmount + rankAmount;
-        require(amount > 0, "No rewards");
-
-        user.pendingInviteRewards = 0;
-        user.pendingRankRewards = 0;
-        user.totalInviteClaimed += inviteAmount;
-        user.totalRankClaimed += rankAmount;
-        totalInviteRewardsClaimed += inviteAmount;
-        totalRankClaimed += rankAmount;
-
-        uint256 stakeId = user.stakeCount;
-        uint256 scoreValue = _stakeValue(amount);
-        stakeRecords[msg.sender][stakeId] = StakeRecord({
-            amount: amount,
-            scoreValue: scoreValue,
-            startTime: block.timestamp,
-            active: true
-        });
-
-        user.stakeCount += 1;
-        user.activeStakeCount += 1;
-        user.totalStaked += amount;
-        totalStaked += amount;
-
-        address boundReferrer = user.referrer;
-        if (boundReferrer != address(0)) {
-            _qualifyReferral(boundReferrer, msg.sender, stakeId, scoreValue);
-            _increaseNodeScore(boundReferrer, scoreValue);
-        }
-
-        emit NodeRewardsClaimed(msg.sender, inviteAmount, rankAmount);
-        emit Deposit(msg.sender, boundReferrer, stakeId, amount);
-        emit NodeRewardsCompounded(msg.sender, stakeId, amount);
-    }
-
-    function openMonthlyRelease(uint256 amount) external onlyAdmin nonReentrant whenNotPaused {
+    function fundInterestPool(uint256 amount) external onlyOwner nonReentrant {
         require(amount > 0, "Invalid amount");
-        require(!_hasActiveRelease(), "Monthly release in progress");
-        require(_rankedNodes.length > 0, "No ranked nodes");
-
-        uint256 beforeBalance = rewardToken.balanceOf(address(this));
-        _safeTransferFrom(rewardToken, msg.sender, address(this), amount);
-        uint256 received = rewardToken.balanceOf(address(this)) - beforeBalance;
-        require(received > 0, "No tokens received");
-
-        currentEpochId += 1;
-        monthlyReleases[currentEpochId] = MonthlyRelease({
-            amount: received,
-            totalNodes: _rankedNodes.length,
-            openedAt: block.timestamp,
-            finishedAt: 0,
-            nextRank: 1,
-            allocatedAmount: 0,
-            finalized: false
-        });
-
-        emit MonthlyReleaseOpened(currentEpochId, received, _rankedNodes.length);
+        _safeTransferFrom(saleToken, msg.sender, address(this), amount);
+        emit InterestPoolFunded(msg.sender, amount);
     }
 
-    function allocateMonthlyRelease(uint256 maxCount) external onlyAdmin nonReentrant whenNotPaused {
-        require(maxCount > 0, "Invalid count");
-        MonthlyRelease storage release = monthlyReleases[currentEpochId];
-        require(release.amount > 0 && !release.finalized, "No active release");
-
-        uint256 processed;
-        while (processed < maxCount && release.nextRank <= release.totalNodes) {
-            uint256 rank = release.nextRank;
-            address node = _rankedNodes[rank - 1];
-            uint256 reward = rank == release.totalNodes
-                ? release.amount - release.allocatedAmount
-                : _rankReward(release.amount, release.totalNodes, rank);
-
-            if (reward > 0) {
-                userInfo[node].pendingRankRewards += reward;
-                release.allocatedAmount += reward;
-                totalRankDistributed += reward;
-            }
-
-            emit RankRewardAllocated(currentEpochId, node, rank, reward);
-            release.nextRank += 1;
-            processed += 1;
-        }
-
-        if (release.nextRank > release.totalNodes) {
-            release.finalized = true;
-            release.finishedAt = block.timestamp;
-            emit MonthlyReleaseFinalized(currentEpochId, release.allocatedAmount);
-        }
+    function setTokenPrice(uint256 price) external onlyOwner {
+        require(price > 0, "Invalid price");
+        tokenPrice = price;
+        emit TokenPriceUpdated(price);
     }
 
-    function setInteractionFeeConfig(
-        address feeToken,
-        uint256 fee,
-        address receiverA,
-        address receiverB
-    ) external onlyOwner {
-        require(receiverA != address(0) && receiverB != address(0), "Invalid fee receiver");
-        interactionFeeToken = IERC20(feeToken);
-        interactionFee = fee;
-        feeReceiverA = receiverA;
-        feeReceiverB = receiverB;
-        emit InteractionFeeConfigUpdated(feeToken, fee, receiverA, receiverB);
+    function setTeamWallet(address wallet) external onlyOwner {
+        require(wallet != address(0), "Invalid wallet");
+        teamWallet = wallet;
+        emit TeamWalletUpdated(wallet);
     }
 
-    function setInviteReward(uint256 reward) external onlyOwner {
-        inviteReward = reward;
-        emit InviteRewardUpdated(reward);
+    function withdrawUSDT(uint256 amount) external onlyOwner nonReentrant {
+        require(amount > 0, "Invalid amount");
+        require(paymentToken.balanceOf(address(this)) >= amount, "Insufficient balance");
+        _safeTransfer(paymentToken, owner, amount);
+        emit USDTWithdrawn(owner, amount);
     }
 
-    function setMinReferralStakeValue(uint256 value) external onlyOwner {
-        minReferralStakeValue = value;
-        emit MinReferralStakeValueUpdated(value);
-    }
-
-    function setStakeValueRate(uint256 rate) external onlyOwner {
-        require(rate > 0, "Invalid rate");
-        stakeValueRate = rate;
-        emit StakeValueRateUpdated(rate);
-    }
-
-    function setOperator(address operator, bool status) external onlyOwner {
-        require(operator != address(0), "Invalid address");
-        require(operator != owner, "Owner is super admin");
-        operators[operator] = status;
-        emit OperatorUpdated(operator, status);
-    }
-
-    function pause() external onlyAdmin {
+    function pause() external onlyOwner {
         paused = true;
         emit Paused();
     }
 
-    function unpause() external onlyAdmin {
+    function unpause() external onlyOwner {
         paused = false;
         emit Unpaused();
-    }
-
-    function recoverWrongToken(address token, address to, uint256 amount) external onlyOwner nonReentrant {
-        require(token != address(0) && to != address(0), "Invalid address");
-        require(token != address(stakingToken), "Cannot recover staking token");
-        require(token != address(rewardToken), "Cannot recover reward token");
-        require(token != address(interactionFeeToken), "Cannot recover fee token");
-        require(amount > 0, "Invalid amount");
-        _safeTransfer(IERC20(token), to, amount);
-        emit WrongTokenRecovered(token, to, amount);
     }
 
     function transferOwnership(address newOwner) external onlyOwner {
@@ -434,175 +215,31 @@ contract NBTStakingBank {
     }
 
     function getUserInfo(address user) external view returns (
-        UserInfo memory info,
-        uint256 pendingRewards,
-        uint256 totalClaimed,
-        uint256 rank
+        address referrer,
+        uint256 purchased,
+        uint256 directReward,
+        uint256 indirectReward,
+        uint256 teamReward,
+        uint256 claimed,
+        uint256 referralCount
     ) {
-        info = userInfo[user];
-        info.pendingInviteRewards += _unlockedInviteRewardView(user);
         return (
-            info,
-            pendingRewardAll(user),
-            userInfo[user].totalInviteClaimed + userInfo[user].totalRankClaimed,
-            getNodeRank(user)
+            referrerOf[user],
+            totalPurchased[user],
+            directRewards[user],
+            indirectRewards[user],
+            teamRewards[user],
+            totalClaimed[user],
+            _referrals[user].length
         );
     }
 
-    function getUserStakes(address user) external view returns (
-        uint256[] memory stakeIds,
-        uint256[] memory amounts,
-        uint256[] memory scoreValues,
-        uint256[] memory startTimes,
-        bool[] memory actives
-    ) {
-        uint256 count = userInfo[user].stakeCount;
-        stakeIds = new uint256[](count);
-        amounts = new uint256[](count);
-        scoreValues = new uint256[](count);
-        startTimes = new uint256[](count);
-        actives = new bool[](count);
-
-        for (uint256 i = 0; i < count; i++) {
-            StakeRecord memory record = stakeRecords[user][i];
-            stakeIds[i] = i;
-            amounts[i] = record.amount;
-            scoreValues[i] = record.scoreValue;
-            startTimes[i] = record.startTime;
-            actives[i] = record.active;
-        }
-    }
-
-    function getStakeRecord(address user, uint256 stakeId) external view returns (
-        uint256 amount,
-        uint256 scoreValue,
-        uint256 stakeStartTime,
-        bool active
-    ) {
-        StakeRecord memory record = stakeRecords[user][stakeId];
-        return (record.amount, record.scoreValue, record.startTime, record.active);
-    }
-
-    function getInviteRewardLocks(address referrer) external view returns (
-        address[] memory invitees,
-        uint256[] memory stakeIds,
-        uint256[] memory amounts,
-        uint256[] memory unlockTimes,
-        uint256 cursor
-    ) {
-        InviteRewardLock[] storage locks = _inviteRewardLocks[referrer];
-        invitees = new address[](locks.length);
-        stakeIds = new uint256[](locks.length);
-        amounts = new uint256[](locks.length);
-        unlockTimes = new uint256[](locks.length);
-        for (uint256 i = 0; i < locks.length; i++) {
-            InviteRewardLock memory rewardLock = locks[i];
-            invitees[i] = rewardLock.invitee;
-            stakeIds[i] = rewardLock.stakeId;
-            amounts[i] = rewardLock.amount;
-            unlockTimes[i] = rewardLock.unlockTime;
-        }
-        cursor = userInfo[referrer].inviteUnlockCursor;
-    }
-
-    function pendingRewardAll(address user) public view returns (uint256) {
-        return userInfo[user].pendingInviteRewards + _unlockedInviteRewardView(user) + userInfo[user].pendingRankRewards;
-    }
-
-    function getMiningStatus() external view returns (
-        uint256 _totalStaked,
-        uint256 _totalDistributed,
-        uint256 _claimableRewards,
-        bool _releaseInProgress,
-        uint256 _startTime,
-        uint256 _rankedNodeCount
-    ) {
-        return (
-            totalStaked,
-            totalRankDistributed + totalInviteRewardsAccrued,
-            _totalPendingNodeRewards(),
-            _hasActiveRelease(),
-            startTime,
-            _rankedNodes.length
-        );
-    }
-
-    function getInteractionFeeConfig() external view returns (
-        address feeToken,
-        uint256 fee,
-        address receiverA,
-        address receiverB
-    ) {
-        return (address(interactionFeeToken), interactionFee, feeReceiverA, feeReceiverB);
-    }
-
-    function getCurrentRelease() external view returns (
-        uint256 epochId,
-        uint256 amount,
-        uint256 totalNodes,
-        uint256 nextRank,
-        uint256 allocatedAmount,
-        bool finalized
-    ) {
-        MonthlyRelease memory release = monthlyReleases[currentEpochId];
-        return (
-            currentEpochId,
-            release.amount,
-            release.totalNodes,
-            release.nextRank,
-            release.allocatedAmount,
-            release.finalized
-        );
-    }
-
-    function getNodeRank(address node) public view returns (uint256) {
-        return _rankIndexPlusOne[node];
-    }
-
-    function getRankedNodeCount() external view returns (uint256) {
-        return _rankedNodes.length;
-    }
-
-    function getRankedNodes(uint256 offset, uint256 limit) external view returns (
-        address[] memory nodes,
-        uint256[] memory scores,
-        uint256 total
-    ) {
-        total = _rankedNodes.length;
-        if (offset >= total) {
-            return (new address[](0), new uint256[](0), total);
-        }
-
-        uint256 end = offset + limit;
-        if (end > total) end = total;
-        nodes = new address[](end - offset);
-        scores = new uint256[](end - offset);
-
-        for (uint256 i = offset; i < end; i++) {
-            address node = _rankedNodes[i];
-            nodes[i - offset] = node;
-            scores[i - offset] = userInfo[node].referralStakeVolume;
-        }
-    }
-
-    function getRankRewardPreview(uint256 amount, uint256 totalNodes, uint256 rank) external pure returns (uint256) {
-        return _rankReward(amount, totalNodes, rank);
-    }
-
-    function getReferrals(address user) external view returns (address[] memory) {
-        return _referrals[user];
-    }
-
-    function getReferralsPaginated(address user, uint256 offset, uint256 limit) external view returns (
-        address[] memory result,
-        uint256 total
-    ) {
+    function getReferralsPaginated(address user, uint256 offset, uint256 limit) external view returns (address[] memory result, uint256 total) {
         address[] storage refs = _referrals[user];
         total = refs.length;
         if (offset >= total) {
             return (new address[](0), total);
         }
-
         uint256 end = offset + limit;
         if (end > total) end = total;
         result = new address[](end - offset);
@@ -611,255 +248,52 @@ contract NBTStakingBank {
         }
     }
 
-    function hasReferrer(address user) external view returns (bool) {
-        return userInfo[user].referrer != address(0);
+    function getSaleStatus() external view returns (
+        uint256 _totalSold,
+        uint256 _totalUSDTReceived,
+        uint256 _totalRewardsDistributed,
+        uint256 _tokenPrice,
+        bool _paused
+    ) {
+        return (totalSold, totalUSDTReceived, totalRewardsDistributed, tokenPrice, paused);
+    }
+
+    function pendingRewards(address user) external view returns (uint256) {
+        return directRewards[user] + indirectRewards[user] + teamRewards[user];
+    }
+
+    function referrals(address user) external view returns (address[] memory) {
+        return _referrals[user];
     }
 
     function _setReferrer(address user, address referrer) internal {
         require(referrer != address(0), "Invalid referrer");
         require(referrer != user, "Cannot refer self");
-        require(userInfo[user].referrer == address(0), "Already has referrer");
-        require(!_createsReferralCycle(user, referrer), "Circular referral not allowed");
-        userInfo[user].referrer = referrer;
+        referrerOf[user] = referrer;
         _referrals[referrer].push(user);
         emit ReferrerSet(user, referrer);
     }
 
-    function _qualifyReferral(address referrer, address user, uint256 stakeId, uint256 scoreValue) internal {
-        if (qualifiedReferral[referrer][user]) return;
-        if (scoreValue < minReferralStakeValue) return;
-        require(_rewardReserveAvailable() >= inviteReward, "Insufficient invite reward reserve");
-        qualifiedReferral[referrer][user] = true;
-        userInfo[referrer].directReferrals += 1;
-        userInfo[referrer].lockedInviteRewards += inviteReward;
-        totalInviteRewardsAccrued += inviteReward;
-        _inviteRewardLocks[referrer].push(InviteRewardLock({
-            invitee: user,
-            stakeId: stakeId,
-            amount: inviteReward,
-            unlockTime: block.timestamp + LOCK_PERIOD
-        }));
-        emit ReferralQualified(referrer, user, inviteReward);
-    }
+    function _distributeRewards(address buyer, uint256 usdtAmount) internal {
+        address direct = referrerOf[buyer];
+        address indirect = direct != address(0) ? referrerOf[direct] : address(0);
 
-    function _increaseNodeScore(address node, uint256 amount) internal {
-        userInfo[node].referralStakeVolume += amount;
-        _updateNodePosition(node);
-    }
+        uint256 directReward = usdtAmount * DIRECT_RATE_BPS / RATE_BASE;
+        uint256 indirectReward = indirect != address(0) ? usdtAmount * INDIRECT_RATE_BPS / RATE_BASE : 0;
+        uint256 teamReward = usdtAmount * TEAM_RATE_BPS / RATE_BASE;
 
-    function _decreaseNodeScore(address node, uint256 amount) internal {
-        uint256 current = userInfo[node].referralStakeVolume;
-        userInfo[node].referralStakeVolume = amount >= current ? 0 : current - amount;
-        _updateNodePosition(node);
-    }
-
-    function _stakeValue(uint256 amount) internal view returns (uint256) {
-        return amount * stakeValueRate / 1 ether;
-    }
-
-    function _updateNodePosition(address node) internal {
-        uint256 score = userInfo[node].referralStakeVolume;
-        uint256 indexPlusOne = _rankIndexPlusOne[node];
-
-        if (score == 0) {
-            if (indexPlusOne != 0) {
-                _removeRankedNode(node);
-            }
-            emit NodeScoreUpdated(node, 0, 0);
-            return;
-        }
-
-        if (indexPlusOne == 0) {
-            _rankedNodes.push(node);
-            _rankIndexPlusOne[node] = _rankedNodes.length;
-        }
-
-        _rebalanceNode(node);
-        emit NodeScoreUpdated(node, score, _rankIndexPlusOne[node]);
-    }
-
-    function _removeRankedNode(address node) internal {
-        uint256 index = _rankIndexPlusOne[node] - 1;
-        uint256 last = _rankedNodes.length - 1;
-        if (index != last) {
-            address moved = _rankedNodes[last];
-            _rankedNodes[index] = moved;
-            _rankIndexPlusOne[moved] = index + 1;
-        }
-        _rankedNodes.pop();
-        _rankIndexPlusOne[node] = 0;
-
-        if (index < _rankedNodes.length) {
-            _rebalanceNode(_rankedNodes[index]);
-        }
-    }
-
-    function _rebalanceNode(address node) internal {
-        uint256 index = _rankIndexPlusOne[node] - 1;
-
-        while (index > 0 && _isHigherRank(node, _rankedNodes[index - 1])) {
-            _swapRankedNodes(index, index - 1);
-            index -= 1;
-        }
-
-        while (index + 1 < _rankedNodes.length && _isHigherRank(_rankedNodes[index + 1], node)) {
-            _swapRankedNodes(index, index + 1);
-            index += 1;
-        }
-    }
-
-    function _swapRankedNodes(uint256 a, uint256 b) internal {
-        address nodeA = _rankedNodes[a];
-        address nodeB = _rankedNodes[b];
-        _rankedNodes[a] = nodeB;
-        _rankedNodes[b] = nodeA;
-        _rankIndexPlusOne[nodeA] = b + 1;
-        _rankIndexPlusOne[nodeB] = a + 1;
-    }
-
-    function _isHigherRank(address a, address b) internal view returns (bool) {
-        uint256 scoreA = userInfo[a].referralStakeVolume;
-        uint256 scoreB = userInfo[b].referralStakeVolume;
-        if (scoreA != scoreB) return scoreA > scoreB;
-        return uint160(a) < uint160(b);
-    }
-
-    function _claimNodeRewards(address user) internal {
-        UserInfo storage info = userInfo[user];
-        _unlockInviteRewards(user);
-        uint256 inviteAmount = info.pendingInviteRewards;
-        uint256 rankAmount = info.pendingRankRewards;
-        uint256 totalAmount = inviteAmount + rankAmount;
-        require(totalAmount > 0, "No rewards");
-
-        info.pendingInviteRewards = 0;
-        info.pendingRankRewards = 0;
-        info.totalInviteClaimed += inviteAmount;
-        info.totalRankClaimed += rankAmount;
-        totalInviteRewardsClaimed += inviteAmount;
-        totalRankClaimed += rankAmount;
-
-        _safeTransfer(rewardToken, user, totalAmount);
-        emit NodeRewardsClaimed(user, inviteAmount, rankAmount);
-    }
-
-    function _unlockInviteRewards(address referrer) internal {
-        UserInfo storage info = userInfo[referrer];
-        InviteRewardLock[] storage locks = _inviteRewardLocks[referrer];
-        uint256 cursor = info.inviteUnlockCursor;
-        uint256 unlocked;
-
-        while (cursor < locks.length && locks[cursor].unlockTime <= block.timestamp) {
-            unlocked += locks[cursor].amount;
-            emit InviteRewardUnlocked(referrer, locks[cursor].invitee, locks[cursor].amount);
-            cursor += 1;
-        }
-
-        if (unlocked > 0) {
-            info.inviteUnlockCursor = cursor;
-            info.lockedInviteRewards -= unlocked;
-            info.pendingInviteRewards += unlocked;
-        }
-    }
-
-    function _unlockedInviteRewardView(address referrer) internal view returns (uint256 unlocked) {
-        UserInfo storage info = userInfo[referrer];
-        InviteRewardLock[] storage locks = _inviteRewardLocks[referrer];
-        uint256 cursor = info.inviteUnlockCursor;
-
-        while (cursor < locks.length && locks[cursor].unlockTime <= block.timestamp) {
-            unlocked += locks[cursor].amount;
-            cursor += 1;
-        }
-    }
-
-    function _collectInteractionFee(address user) internal {
-        if (interactionFee == 0) return;
-        uint256 half = interactionFee / 2;
-        uint256 second = interactionFee - half;
-        address feeToken = address(interactionFeeToken);
-        if (feeToken == address(0)) {
-            require(msg.value >= interactionFee, "Insufficient BNB fee");
-            _safeTransferNative(feeReceiverA, half);
-            _safeTransferNative(feeReceiverB, second);
-            uint256 refund = msg.value - interactionFee;
-            if (refund > 0) {
-                _safeTransferNative(user, refund);
-            }
+        if (direct != address(0)) {
+            directRewards[direct] += directReward;
+            teamRewards[direct] += teamReward;
         } else {
-            require(msg.value == 0, "Unexpected BNB");
-            _safeTransferFrom(interactionFeeToken, user, feeReceiverA, half);
-            _safeTransferFrom(interactionFeeToken, user, feeReceiverB, second);
-        }
-        emit InteractionFeePaid(user, feeToken, interactionFee, feeReceiverA, feeReceiverB);
-    }
-
-    function _safeTransferNative(address to, uint256 amount) internal {
-        (bool ok, ) = payable(to).call{value: amount}("");
-        require(ok, "Native transfer failed");
-    }
-
-    function _rankReward(uint256 amount, uint256 totalNodes, uint256 rank) internal pure returns (uint256) {
-        require(rank > 0 && rank <= totalNodes, "Invalid rank");
-        uint256[4] memory counts = _groupCounts(totalNodes);
-        uint256[4] memory weights = [uint256(5_000), uint256(3_000), uint256(1_500), uint256(500)];
-
-        uint256 activeWeight;
-        for (uint256 i = 0; i < 4; i++) {
-            if (counts[i] > 0) activeWeight += weights[i];
+            teamRewards[teamWallet] += teamReward;
         }
 
-        uint256 groupIndex = _rankGroup(rank);
-        uint256 groupPool = amount * weights[groupIndex] / activeWeight;
-        return groupPool / counts[groupIndex];
-    }
-
-    function _groupCounts(uint256 totalNodes) internal pure returns (uint256[4] memory counts) {
-        if (totalNodes == 0) return counts;
-        counts[0] = totalNodes > 10 ? 10 : totalNodes;
-        if (totalNodes > 10) counts[1] = totalNodes > 50 ? 40 : totalNodes - 10;
-        if (totalNodes > 50) counts[2] = totalNodes > 100 ? 50 : totalNodes - 50;
-        if (totalNodes > 100) counts[3] = totalNodes - 100;
-    }
-
-    function _rankGroup(uint256 rank) internal pure returns (uint256) {
-        if (rank <= 10) return 0;
-        if (rank <= 50) return 1;
-        if (rank <= 100) return 2;
-        return 3;
-    }
-
-    function _rewardReserveAvailable() internal view returns (uint256) {
-        uint256 balance = rewardToken.balanceOf(address(this));
-        uint256 reserved = _totalPendingNodeRewards() + _activeReleaseUnallocated();
-        if (address(stakingToken) == address(rewardToken)) {
-            reserved += totalStaked;
+        if (indirect != address(0)) {
+            indirectRewards[indirect] += indirectReward;
         }
-        return balance > reserved ? balance - reserved : 0;
-    }
 
-    function _totalPendingNodeRewards() internal view returns (uint256) {
-        return (totalInviteRewardsAccrued - totalInviteRewardsClaimed) + (totalRankDistributed - totalRankClaimed);
-    }
-
-    function _activeReleaseUnallocated() internal view returns (uint256) {
-        MonthlyRelease memory release = monthlyReleases[currentEpochId];
-        if (release.finalized || release.amount == 0) return 0;
-        return release.amount - release.allocatedAmount;
-    }
-
-    function _hasActiveRelease() internal view returns (bool) {
-        MonthlyRelease memory release = monthlyReleases[currentEpochId];
-        return release.amount > 0 && !release.finalized;
-    }
-
-    function _createsReferralCycle(address user, address referrer) internal view returns (bool) {
-        address current = referrer;
-        for (uint256 i = 0; i < MAX_REFERRAL_DEPTH && current != address(0); i++) {
-            if (current == user) return true;
-            current = userInfo[current].referrer;
-        }
-        return false;
+        totalRewardsDistributed += directReward + indirectReward + teamReward;
     }
 
     function _safeTransfer(IERC20 token, address to, uint256 amount) internal {

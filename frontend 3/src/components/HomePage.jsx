@@ -5,21 +5,14 @@ import { useLanguage } from '../contexts/LanguageContext';
 
 export default function HomePage({ onPageChange, stakingData }) {
   const { t } = useLanguage();
-  const miningStatus = stakingData?.miningStatus;
+  const saleStatus = stakingData?.saleStatus;
 
   const stats = [
-    { label: t('cz.home.statStaked'), value: miningStatus?.totalStaked || '0', suffix: 'CZ', icon: <FiTrendingUp /> },
-    { label: t('cz.home.statDistributed'), value: miningStatus?.totalDistributed || '0', suffix: 'CZ', icon: <FiGift /> },
-    { label: t('cz.home.statNodes'), value: miningStatus?.rankedNodeCount ?? 0, suffix: t('cz.common.nodes'), icon: <FiUsers /> },
+    { label: t('cz.home.statSold'), value: saleStatus?.totalSold || '0', suffix: t('cz.common.tokenSymbol'), icon: <FiTrendingUp /> },
+    { label: t('cz.home.statDistributed'), value: saleStatus?.totalRewardsDistributed || '0', suffix: 'USDT', icon: <FiGift /> },
+    { label: t('cz.home.statBuyers'), value: saleStatus?.totalSold ? Math.max(1, Math.floor(Number(saleStatus.totalSold) / 1000)) : 0, suffix: t('cz.common.person'), icon: <FiUsers /> },
   ];
   const isLoading = stakingData?.loading !== false;
-
-  const bands = [
-    { rank: t('cz.home.bandTop10'), share: '50%', note: t('cz.home.noteCore') },
-    { rank: t('cz.home.band11To50'), share: '30%', note: t('cz.home.noteClimb') },
-    { rank: t('cz.home.band51To100'), share: '15%', note: t('cz.home.noteGrowth') },
-    { rank: t('cz.home.bandAfter100'), share: '5%', note: t('cz.home.noteUniversal') },
-  ];
 
   return (
     <div className="space-y-7 md:space-y-16">
@@ -54,18 +47,18 @@ export default function HomePage({ onPageChange, stakingData }) {
 
           <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:gap-4">
             <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => onPageChange('token-mining')} className="btn-premium w-full sm:w-auto">
-              <span className="flex items-center justify-center gap-2 whitespace-nowrap">{t('cz.home.viewRank')} <FiArrowRight className="w-5 h-5" /></span>
+              <span className="flex items-center justify-center gap-2 whitespace-nowrap">{t('cz.home.buyTokens')} <FiArrowRight className="w-5 h-5" /></span>
             </motion.button>
             <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }} onClick={() => onPageChange('referral')} className="btn-ghost w-full sm:w-auto">
-              <span className="flex items-center justify-center gap-2 whitespace-nowrap"><FiUsers className="w-5 h-5" /> {t('cz.home.inviteFriends')}</span>
+              <span className="flex items-center justify-center gap-2 whitespace-nowrap"><FiUsers className="w-5 h-5" /> {t('cz.home.viewReferral')}</span>
             </motion.button>
             <motion.button
               whileHover={{ scale: 1.04 }}
               whileTap={{ scale: 0.96 }}
-              onClick={() => onPageChange('token-mining')}
+              onClick={() => onPageChange('referral')}
               className="btn-ghost w-full sm:w-auto col-span-2 sm:col-span-1 border-[#FFB800]/50 bg-[#FFB800]/10 text-[#FFB800] hover:border-[#FFB800] hover:bg-[#FFB800]/20 hover:shadow-[0_0_30px_rgba(255,184,0,0.18)]"
             >
-              <span className="flex items-center justify-center gap-2 whitespace-nowrap"><FiZap className="w-5 h-5" /> {t('cz.home.goStake')}</span>
+              <span className="flex items-center justify-center gap-2 whitespace-nowrap"><FiZap className="w-5 h-5" /> {t('cz.home.inviteFriends')}</span>
             </motion.button>
           </div>
         </motion.div>
@@ -116,20 +109,23 @@ export default function HomePage({ onPageChange, stakingData }) {
         <div className="glass-premium p-5 md:p-6">
           <h2 className="text-xl sm:text-2xl font-bold text-white mb-4 sm:mb-5 flex items-center gap-3">
             <FiAward className="text-[#00D9A5]" />
-            {t('cz.home.monthlyTitle')}
+            {t('cz.referral.title')}
           </h2>
-          <div className="grid sm:grid-cols-2 gap-4">
-            {bands.map((band, index) => (
+          <div className="grid sm:grid-cols-3 gap-4">
+            {[
+              { title: t('cz.referral.directRewardTitle'), rate: '20%' },
+              { title: t('cz.referral.indirectRewardTitle'), rate: '10%' },
+              { title: t('cz.referral.teamRewardTitle'), rate: '5%' },
+            ].map((item, index) => (
               <motion.div
-                key={band.rank}
+                key={item.title}
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.15 + index * 0.08 }}
-                className="p-5 rounded-xl bg-white/5 border border-white/10"
+                className="p-5 rounded-xl bg-white/5 border border-white/10 text-center"
               >
-                <div className="text-white/50 text-sm">{band.rank}</div>
-                <div className="text-4xl font-bold text-gradient-gold my-2">{band.share}</div>
-                <div className="text-white/35 text-sm">{band.note}</div>
+                <div className="text-white/50 text-sm">{item.title}</div>
+                <div className="text-4xl font-bold text-gradient-gold my-2">{item.rate}</div>
               </motion.div>
             ))}
           </div>

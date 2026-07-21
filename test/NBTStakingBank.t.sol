@@ -1,142 +1,192 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "../contracts/NBTToken.sol";
+import "forge-std/Test.sol";
 import "../contracts/NBTStakingBank.sol";
 
-contract NodeUser {
-    function approve(NBTToken token, address spender, uint256 amount) external {
-        token.approve(spender, amount);
+contract MockERC20 is IERC20 {
+    string public name = "Mock Token";
+    string public symbol = "MOCK";
+    uint8 public decimals = 18;
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+    uint256 public totalSupply;
+
+    function mint(address to, uint256 amount) external {
+        totalSupply += amount;
+        balanceOf[to] += amount;
+        emit Transfer(address(0), to, amount);
     }
 
-    function stake(NBTStakingBank bank, uint256 amount, address referrer) external {
-        bank.stake(amount, referrer);
+    function transfer(address to, uint256 amount) external returns (bool) {
+        require(balanceOf[msg.sender] >= amount, "Insufficient");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        emit Transfer(msg.sender, to, amount);
+        return true;
     }
 
-    function claim(NBTStakingBank bank) external {
-        bank.claimNodeRewards();
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        emit Approval(msg.sender, spender, amount);
+        return true;
     }
 
-    function compound(NBTStakingBank bank, address referrer) external {
-        bank.compoundNodeRewards(referrer);
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(balanceOf[from] >= amount, "Insufficient");
+        require(allowance[from][msg.sender] >= amount, "Allowance");
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        emit Transfer(from, to, amount);
+        return true;
     }
+
+    event Transfer(address indexed from, address indexed to, uint256 value);
+    event Approval(address indexed owner, address indexed spender, uint256 value);
 }
 
-contract NBTStakingBankTest {
-    function _newToken(uint256 supply) internal returns (NBTToken) {
-        address[] memory pairs = new address[](0);
-        address[] memory excluded = new address[](0);
-        return new NBTToken("CZ", "CZ", supply, address(this), 0, 0, pairs, excluded);
+contract NBTStakingBankTest is Test {
+    NBTStakingBank public bank;
+    MockERC20 public usdt;
+    MockERC20 public saleToken;
+
+    address public owner = address(1);
+    address public teamWallet = address(2);
+    address public userA = address(3);
+    address public userB = address(4);
+    address public userC = address(5);
+
+    function setUp() public {
+        vm.startPrank(owner);
+        usdt = new MockERC20();
+        saleToken = new MockERC20();
+        bank = new NBTStakingBank(address(saleToken), address(usdt), teamWallet);
+
+        saleToken.mint(address(bank), 1_000_000 ether);
+        usdt.mint(userA, 10_000 ether);
+        usdt.mint(userB, 10_000 ether);
+        usdt.mint(userC, 10_000 ether);
+        saleToken.mint(owner, 100_000 ether);
+        vm.stopPrank();
+
+        vm.prank(userA);
+        usdt.approve(address(bank), type(uint256).max);
+        vm.prank(userB);
+        usdt.approve(address(bank), type(uint256).max);
+        vm.prank(userC);
+        usdt.approve(address(bank), type(uint256).max);
     }
 
-    function _newBank(NBTToken token) internal returns (NBTStakingBank) {
-        return new NBTStakingBank(
-            address(token),
-            address(token),
-            address(token),
-            address(0xA),
-            address(0xB),
-            0.4 ether
-        );
+    function test_BuyAndRewards() public {
+        // userA buys 1000 USDT, no referrer
+        vm.prank(userA);
+        bank.buy(1000 ether, address(0));
+
+        assertEq(bank.totalSold(), 1000 ether);
+        assertEq(bank.totalUSDTReceived(), 1000 ether);
+        assertEq(bank.totalPurchased(userA), 1000 ether);
+
+        // userB buys 1000 USDT with userA as referrer
+        vm.prank(userB);
+        bank.buy(1000 ether, userA);
+
+        // userA direct reward = 20% of 1000 = 200 USDT
+        assertEq(bank.directRewards(userA), 200 ether);
+        (, , , , , , uint256 refCount) = bank.getUserInfo(userA);
+        assertEq(refCount, 1);
+
+        // userC buys 1000 USDT with userB as referrer
+        vm.prank(userC);
+        bank.buy(1000 ether, userB);
+
+        // userB direct reward = 200 USDT
+        assertEq(bank.directRewards(userB), 200 ether);
+        // userA indirect reward = 10% of 1000 = 100 USDT
+        assertEq(bank.indirectRewards(userA), 100 ether);
+
+        // userA claims rewards
+        uint256 balanceBefore = usdt.balanceOf(userA);
+        vm.prank(userA);
+        bank.claimRewards();
+        uint256 balanceAfter = usdt.balanceOf(userA);
+        assertEq(balanceAfter - balanceBefore, 300 ether);
+        assertEq(bank.pendingRewards(userA), 0);
     }
 
-    function testReferralStakeCreatesRankAndInviteReward() external {
-        NBTToken token = _newToken(1_000_000 ether);
-        NBTStakingBank bank = _newBank(token);
-        NodeUser staker = new NodeUser();
-        NodeUser inviter = new NodeUser();
+    function test_TeamReward() public {
+        // userA -> userB -> userC
+        vm.prank(userB);
+        bank.setReferrer(userA);
+        vm.prank(userC);
+        bank.setReferrer(userB);
 
-        bank.setStakeValueRate(2 ether);
-        token.transfer(address(bank), 10 ether);
-        token.transfer(address(staker), 100.4 ether);
-        staker.approve(token, address(bank), 100.4 ether);
-        staker.stake(bank, 100 ether, address(inviter));
+        vm.prank(userC);
+        bank.buy(1000 ether, userB);
 
-        require(bank.getNodeRank(address(inviter)) == 1, "rank mismatch");
-
-        (
-            NBTStakingBank.UserInfo memory info,
-            uint256 pendingRewards,
-            uint256 totalClaimed,
-            uint256 rank
-        ) = bank.getUserInfo(address(inviter));
-
-        require(rank == 1, "getter rank mismatch");
-        require(totalClaimed == 0, "claimed mismatch");
-        require(info.directReferrals == 1, "direct referrals mismatch");
-        require(info.referralStakeVolume == 200 ether, "score mismatch");
-        require(info.pendingInviteRewards == 1 ether, "invite reward mismatch");
-        require(pendingRewards == 1 ether, "pending mismatch");
+        // team wallet gets 5% = 50 USDT
+        assertEq(bank.teamRewards(teamWallet), 50 ether);
     }
 
-    function testMonthlyReleaseAllocatesAllToOnlyRankedNode() external {
-        NBTToken token = _newToken(1_000_000 ether);
-        NBTStakingBank bank = _newBank(token);
-        NodeUser staker = new NodeUser();
-        NodeUser inviter = new NodeUser();
+    function test_HoldingInterest() public {
+        // Owner funds interest pool
+        vm.startPrank(owner);
+        saleToken.approve(address(bank), 1000 ether);
+        bank.fundInterestPool(1000 ether);
+        vm.stopPrank();
 
-        token.transfer(address(bank), 10 ether);
-        token.transfer(address(staker), 100.4 ether);
-        staker.approve(token, address(bank), 100.4 ether);
-        staker.stake(bank, 100 ether, address(inviter));
+        // userA buys 1000 tokens
+        vm.prank(userA);
+        bank.buy(1000 ether, address(0));
 
-        token.approve(address(bank), 100 ether);
-        bank.openMonthlyRelease(100 ether);
-        bank.allocateMonthlyRelease(10);
+        // fast forward 1 day
+        vm.warp(block.timestamp + 1 days);
 
-        (
-            NBTStakingBank.UserInfo memory info,
-            uint256 pendingRewards,
-            uint256 totalClaimed,
-            uint256 rank
-        ) = bank.getUserInfo(address(inviter));
+        uint256 pending = bank.pendingInterest(userA);
+        // 1000 * 1% = 10 tokens
+        assertEq(pending, 10 ether);
 
-        require(rank == 1, "rank mismatch");
-        require(totalClaimed == 0, "claimed mismatch");
-        require(info.pendingRankRewards == 100 ether, "rank reward mismatch");
-        require(pendingRewards == 101 ether, "total pending mismatch");
-        require(bank.totalRankDistributed() == 100 ether, "distributed mismatch");
-
-        token.transfer(address(inviter), 0.4 ether);
-        inviter.approve(token, address(bank), 0.4 ether);
-        inviter.claim(bank);
-        require(token.balanceOf(address(inviter)) == 101 ether, "claim mismatch");
+        // userA claims interest
+        uint256 balanceBefore = saleToken.balanceOf(userA);
+        vm.prank(userA);
+        bank.claimInterest();
+        uint256 balanceAfter = saleToken.balanceOf(userA);
+        assertEq(balanceAfter - balanceBefore, 10 ether);
     }
 
-    function testCompoundNodeRewardsCreatesNewStakeWithOneFee() external {
-        NBTToken token = _newToken(1_000_000 ether);
-        NBTStakingBank bank = _newBank(token);
-        NodeUser staker = new NodeUser();
-        NodeUser inviter = new NodeUser();
+    function test_Pause() public {
+        vm.prank(owner);
+        bank.pause();
+        assertTrue(bank.paused());
 
-        token.transfer(address(bank), 10 ether);
-        token.transfer(address(staker), 100.4 ether);
-        staker.approve(token, address(bank), 100.4 ether);
-        staker.stake(bank, 100 ether, address(inviter));
+        vm.prank(userA);
+        vm.expectRevert();
+        bank.buy(100 ether, address(0));
 
-        token.transfer(address(inviter), 0.4 ether);
-        inviter.approve(token, address(bank), 0.4 ether);
-        inviter.compound(bank, address(0));
+        vm.prank(owner);
+        bank.unpause();
+        assertFalse(bank.paused());
+    }
 
-        (
-            NBTStakingBank.UserInfo memory info,
-            uint256 pendingRewards,
-            uint256 totalClaimed,
-            uint256 rank
-        ) = bank.getUserInfo(address(inviter));
+    function test_WithdrawUSDT() public {
+        vm.prank(userA);
+        bank.buy(1000 ether, address(0));
 
-        require(rank == 1, "rank mismatch");
-        require(info.pendingInviteRewards == 0, "pending invite mismatch");
-        require(pendingRewards == 0, "pending mismatch");
-        require(totalClaimed == 1 ether, "claimed mismatch");
-        require(info.activeStakeCount == 1, "active stake mismatch");
-        require(info.totalStaked == 1 ether, "compounded stake mismatch");
-        require(bank.totalStaked() == 101 ether, "total staked mismatch");
+        uint256 balanceBefore = usdt.balanceOf(owner);
+        vm.prank(owner);
+        bank.withdrawUSDT(500 ether);
+        uint256 balanceAfter = usdt.balanceOf(owner);
+        assertEq(balanceAfter - balanceBefore, 500 ether);
+    }
 
-        (uint256 amount, uint256 scoreValue,, bool active) = bank.getStakeRecord(address(inviter), 0);
-        require(active, "compound stake inactive");
-        require(amount == 1 ether, "compound amount mismatch");
-        require(scoreValue == 1 ether, "compound score mismatch");
-        require(token.balanceOf(address(inviter)) == 0, "fee should be paid once");
+    function test_SetTokenPrice() public {
+        vm.prank(owner);
+        bank.setTokenPrice(2 ether);
+        assertEq(bank.tokenPrice(), 2 ether);
+
+        // userA buys 100 USDT at price 2, should get 200 tokens
+        vm.prank(userA);
+        bank.buy(100 ether, address(0));
+        assertEq(bank.totalPurchased(userA), 200 ether);
     }
 }

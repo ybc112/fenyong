@@ -3,7 +3,8 @@ const path = require('path');
 const { ethers } = require('ethers');
 
 const DEFAULT_STAKING_BANK = '0x903fcce5d67648FBE6Dccc9806e3bd7D303380fD';
-const DEFAULT_CZ_TOKEN = '0xD0F2A86C7EbCeE887F5bFB86771f994CD142bD04';
+const DEFAULT_SALE_TOKEN = '0x2922933e6B4a58530634BAEcF983Dd8ac34d4444';
+const DEFAULT_PAYMENT_TOKEN = '0x55d398326f99059fF775485246999027B3197955';
 const DEFAULT_RPC_URLS = [
   'https://bsc.publicnode.com',
   'https://bsc-dataseed.binance.org/',
@@ -14,21 +15,29 @@ const DEFAULT_RPC_URLS = [
 ];
 
 const STAKING_ABI = [
-  'function stakingToken() view returns (address)',
-  'function rewardToken() view returns (address)',
-  'function inviteReward() view returns (uint256)',
-  'function minReferralStakeValue() view returns (uint256)',
-  'function stakeValueRate() view returns (uint256)',
-  'function LOCK_PERIOD() view returns (uint256)',
+  'function saleToken() view returns (address)',
+  'function paymentToken() view returns (address)',
+  'function tokenPrice() view returns (uint256)',
+  'function totalSold() view returns (uint256)',
+  'function totalUSDTReceived() view returns (uint256)',
+  'function totalRewardsDistributed() view returns (uint256)',
+  'function totalInterestClaimed() view returns (uint256)',
+  'function dailyInterestRateBps() view returns (uint256)',
   'function paused() view returns (bool)',
-  'function getMiningStatus() view returns (uint256 _totalStaked, uint256 _totalDistributed, uint256 _claimableRewards, bool _releaseInProgress, uint256 _startTime, uint256 _rankedNodeCount)',
-  'function getCurrentRelease() view returns (uint256 epochId, uint256 amount, uint256 totalNodes, uint256 nextRank, uint256 allocatedAmount, bool finalized)',
-  'function getInteractionFeeConfig() view returns (address feeToken, uint256 fee, address receiverA, address receiverB)',
-  'function getRankedNodes(uint256 offset, uint256 limit) view returns (address[] nodes, uint256[] scores, uint256 total)',
-  'function getUserInfo(address user) view returns (tuple(uint256 totalStaked, uint256 totalWithdrawn, uint256 stakeCount, uint256 activeStakeCount, address referrer, uint256 directReferrals, uint256 referralStakeVolume, uint256 pendingInviteRewards, uint256 totalInviteClaimed, uint256 pendingRankRewards, uint256 totalRankClaimed, uint256 lockedInviteRewards, uint256 inviteUnlockCursor) info, uint256 pendingRewards, uint256 totalClaimed, uint256 rank)',
-  'function getUserStakes(address user) view returns (uint256[] stakeIds, uint256[] amounts, uint256[] scoreValues, uint256[] startTimes, bool[] actives)',
-  'function pendingRewardAll(address user) view returns (uint256)',
+  'function owner() view returns (address)',
+  'function pendingOwner() view returns (address)',
+  'function teamWallet() view returns (address)',
+  'function getSaleStatus() view returns (uint256 _totalSold, uint256 _totalUSDTReceived, uint256 _totalRewardsDistributed, uint256 _tokenPrice, bool _paused)',
+  'function getUserInfo(address user) view returns (address referrer, uint256 purchased, uint256 directReward, uint256 indirectReward, uint256 teamReward, uint256 claimed, uint256 referralCount)',
   'function getReferralsPaginated(address user, uint256 offset, uint256 limit) view returns (address[] result, uint256 total)',
+  'function pendingRewards(address user) view returns (uint256)',
+  'function pendingInterest(address user) view returns (uint256)',
+];
+
+const ERC20_ABI = [
+  'function balanceOf(address) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
 ];
 
 const ZERO = '0x0000000000000000000000000000000000000000';
@@ -101,91 +110,18 @@ const toEther = (value, fallback = '0') => {
   return ethers.formatEther(value);
 };
 
-const activeStakeView = (userStakes, lockPeriod) => {
-  if (!userStakes) return [];
-
-  const ids = Array.from(valueAt(userStakes, 'stakeIds', 0, []));
-  const amounts = valueAt(userStakes, 'amounts', 1, []);
-  const scoreValues = valueAt(userStakes, 'scoreValues', 2, []);
-  const startTimes = valueAt(userStakes, 'startTimes', 3, []);
-  const actives = valueAt(userStakes, 'actives', 4, []);
-  const nowSeconds = Math.floor(Date.now() / 1000);
-
-  return ids.map((id, index) => {
-    const startTime = toNumber(startTimes[index]);
-    const unlockTime = startTime + lockPeriod;
-    return {
-      stakeId: toNumber(id),
-      amount: toEther(amounts[index]),
-      scoreValue: toEther(scoreValues[index]),
-      startTime,
-      unlockTime,
-      isUnlocked: nowSeconds >= unlockTime,
-      active: Boolean(actives[index]),
-    };
-  }).filter((stake) => stake.active);
-};
-
-const rankedNodesView = (rankedData) => {
-  if (!rankedData) return { rankedNodes: [], rankedNodesTotal: 0 };
-  const nodes = Array.from(valueAt(rankedData, 'nodes', 0, []));
-  const scores = valueAt(rankedData, 'scores', 1, []);
-  const total = toNumber(valueAt(rankedData, 'total', 2, 0));
-
-  return {
-    rankedNodes: nodes.map((address, index) => ({
-      address,
-      score: toEther(scores[index]),
-      rank: index + 1,
-    })),
-    rankedNodesTotal: total,
-  };
-};
-
-const userInfoView = (userInfo) => {
+const userInfoView = (userInfo, pendingRewards, pendingInterest) => {
   if (!userInfo) return null;
-  const info = valueAt(userInfo, 'info', 0);
-  if (!info) return null;
-
   return {
-    totalStaked: toEther(valueAt(info, 'totalStaked', 0)),
-    totalWithdrawn: toEther(valueAt(info, 'totalWithdrawn', 1)),
-    stakeCount: toNumber(valueAt(info, 'stakeCount', 2)),
-    activeStakeCount: toNumber(valueAt(info, 'activeStakeCount', 3)),
-    referrer: valueAt(info, 'referrer', 4, ZERO),
-    directReferrals: toNumber(valueAt(info, 'directReferrals', 5)),
-    referralStakeVolume: toEther(valueAt(info, 'referralStakeVolume', 6)),
-    pendingInviteRewards: toEther(valueAt(info, 'pendingInviteRewards', 7)),
-    totalInviteClaimed: toEther(valueAt(info, 'totalInviteClaimed', 8)),
-    pendingRankRewards: toEther(valueAt(info, 'pendingRankRewards', 9)),
-    totalRankClaimed: toEther(valueAt(info, 'totalRankClaimed', 10)),
-    lockedInviteRewards: toEther(valueAt(info, 'lockedInviteRewards', 11, 0n)),
-    inviteUnlockCursor: toNumber(valueAt(info, 'inviteUnlockCursor', 12, 0n)),
-    pendingRewards: toEther(valueAt(userInfo, 'pendingRewards', 1)),
-    totalClaimed: toEther(valueAt(userInfo, 'totalClaimed', 2)),
-    rank: toNumber(valueAt(userInfo, 'rank', 3)),
-  };
-};
-
-const releaseView = (currentRelease) => {
-  if (!currentRelease) return null;
-  return {
-    epochId: toNumber(valueAt(currentRelease, 'epochId', 0)),
-    amount: toEther(valueAt(currentRelease, 'amount', 1)),
-    totalNodes: toNumber(valueAt(currentRelease, 'totalNodes', 2)),
-    nextRank: toNumber(valueAt(currentRelease, 'nextRank', 3)),
-    allocatedAmount: toEther(valueAt(currentRelease, 'allocatedAmount', 4)),
-    finalized: Boolean(valueAt(currentRelease, 'finalized', 5)),
-  };
-};
-
-const feeConfigView = (interactionFeeConfig) => {
-  if (!interactionFeeConfig) return null;
-  return {
-    feeToken: valueAt(interactionFeeConfig, 'feeToken', 0, ZERO),
-    fee: toEther(valueAt(interactionFeeConfig, 'fee', 1)),
-    receiverA: valueAt(interactionFeeConfig, 'receiverA', 2, ZERO),
-    receiverB: valueAt(interactionFeeConfig, 'receiverB', 3, ZERO),
+    referrer: valueAt(userInfo, 'referrer', 0, ZERO),
+    purchased: toEther(valueAt(userInfo, 'purchased', 1)),
+    directReward: toEther(valueAt(userInfo, 'directReward', 2)),
+    indirectReward: toEther(valueAt(userInfo, 'indirectReward', 3)),
+    teamReward: toEther(valueAt(userInfo, 'teamReward', 4)),
+    claimed: toEther(valueAt(userInfo, 'claimed', 5)),
+    referralCount: toNumber(valueAt(userInfo, 'referralCount', 6)),
+    pendingRewards: toEther(pendingRewards),
+    pendingInterest: toEther(pendingInterest),
   };
 };
 
@@ -193,82 +129,74 @@ const readWithProvider = async (provider, account, rpcUrl) => {
   const contract = new ethers.Contract(stakingBankAddress(), STAKING_ABI, provider);
 
   const [
-    miningStatus,
+    saleStatus,
     isPaused,
-    currentRelease,
-    interactionFeeConfig,
-    stakingTokenAddress,
-    rewardTokenAddress,
-    inviteReward,
-    minReferralStakeValue,
-    lockPeriodRaw,
-    stakeValueRate,
-    rankedData,
+    saleTokenAddress,
+    paymentTokenAddress,
+    tokenPrice,
+    owner,
+    pendingOwner,
+    teamWallet,
+    dailyInterestRateBps,
+    saleTokenBalance,
   ] = await Promise.all([
-    contract.getMiningStatus(),
+    contract.getSaleStatus(),
     contract.paused().catch(() => false),
-    contract.getCurrentRelease().catch(() => null),
-    contract.getInteractionFeeConfig().catch(() => null),
-    contract.stakingToken().catch(() => DEFAULT_CZ_TOKEN),
-    contract.rewardToken().catch(() => DEFAULT_CZ_TOKEN),
-    contract.inviteReward().catch(() => ethers.parseEther('1000000')),
-    contract.minReferralStakeValue().catch(() => ethers.parseEther('100')),
-    contract.LOCK_PERIOD().catch(() => BigInt(15 * 24 * 60 * 60)),
-    contract.stakeValueRate().catch(() => ethers.parseEther('1')),
-    contract.getRankedNodes(0, 100).catch(() => null),
+    contract.saleToken().catch(() => DEFAULT_SALE_TOKEN),
+    contract.paymentToken().catch(() => DEFAULT_PAYMENT_TOKEN),
+    contract.tokenPrice().catch(() => ethers.parseEther('1')),
+    contract.owner().catch(() => ZERO),
+    contract.pendingOwner().catch(() => ZERO),
+    contract.teamWallet().catch(() => ZERO),
+    contract.dailyInterestRateBps().catch(() => 100n),
+    (async () => {
+      const addr = await contract.saleToken().catch(() => DEFAULT_SALE_TOKEN);
+      const token = new ethers.Contract(addr, ERC20_ABI, provider);
+      return token.balanceOf(stakingBankAddress()).catch(() => 0n);
+    })(),
   ]);
 
-  const lockPeriod = toNumber(lockPeriodRaw, 15 * 24 * 60 * 60);
   let userInfo = null;
-  let pendingRewardAll = '0';
-  let stakes = [];
   let referrals = [];
   let referralsTotal = 0;
 
   if (account) {
-    const [userInfoRaw, pendingRewardRaw, userStakesRaw, referralsRaw] = await Promise.all([
+    const [userInfoRaw, pendingRewardsRaw, pendingInterestRaw, referralsRaw] = await Promise.all([
       contract.getUserInfo(account).catch(() => null),
-      contract.pendingRewardAll(account).catch(() => 0n),
-      contract.getUserStakes(account).catch(() => null),
+      contract.pendingRewards(account).catch(() => 0n),
+      contract.pendingInterest(account).catch(() => 0n),
       contract.getReferralsPaginated(account, 0, 10).catch(() => null),
     ]);
 
-    userInfo = userInfoView(userInfoRaw);
-    pendingRewardAll = toEther(pendingRewardRaw);
-    stakes = activeStakeView(userStakesRaw, lockPeriod);
+    userInfo = userInfoView(userInfoRaw, pendingRewardsRaw, pendingInterestRaw);
     if (referralsRaw) {
       referrals = Array.from(valueAt(referralsRaw, 'result', 0, []));
       referralsTotal = toNumber(valueAt(referralsRaw, 'total', 1));
     }
   }
 
-  const ranked = rankedNodesView(rankedData);
-
   return {
     userInfo,
-    stakes,
-    miningStatus: {
-      totalStaked: toEther(valueAt(miningStatus, '_totalStaked', 0)),
-      totalDistributed: toEther(valueAt(miningStatus, '_totalDistributed', 1)),
-      claimableRewards: toEther(valueAt(miningStatus, '_claimableRewards', 2)),
-      releaseInProgress: Boolean(valueAt(miningStatus, '_releaseInProgress', 3)),
-      startTime: toNumber(valueAt(miningStatus, '_startTime', 4)),
-      rankedNodeCount: toNumber(valueAt(miningStatus, '_rankedNodeCount', 5)),
-    },
-    pendingRewardAll,
     referrals,
     referralsTotal,
-    rankedNodes: ranked.rankedNodes,
-    rankedNodesTotal: ranked.rankedNodesTotal,
-    currentRelease: releaseView(currentRelease),
-    interactionFeeConfig: feeConfigView(interactionFeeConfig),
-    stakingTokenAddress,
-    rewardTokenAddress,
-    inviteReward: toEther(inviteReward),
-    minReferralStakeValue: toEther(minReferralStakeValue),
-    lockPeriod,
-    stakeValueRate: toEther(stakeValueRate),
+    saleStatus: {
+      totalSold: toEther(valueAt(saleStatus, '_totalSold', 0)),
+      totalUSDTReceived: toEther(valueAt(saleStatus, '_totalUSDTReceived', 1)),
+      totalRewardsDistributed: toEther(valueAt(saleStatus, '_totalRewardsDistributed', 2)),
+      tokenPrice: toEther(valueAt(saleStatus, '_tokenPrice', 3)),
+      paused: Boolean(valueAt(saleStatus, '_paused', 4)),
+    },
+    saleTokenAddress,
+    paymentTokenAddress,
+    tokenPrice: toEther(tokenPrice),
+    owner,
+    pendingOwner,
+    teamWallet,
     isPaused: Boolean(isPaused),
+    interestInfo: {
+      rateBps: Number(dailyInterestRateBps ?? 100n),
+      poolBalance: toEther(saleTokenBalance),
+    },
     cache: {
       source: 'live',
       rpcUrl,

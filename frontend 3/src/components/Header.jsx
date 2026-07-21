@@ -37,7 +37,7 @@ export default function Header({ account, isConnecting, isCorrectNetwork, onConn
   // 基础导航项
   const baseNavItems = [
     { id: 'home', label: t('header.home') },
-    { id: 'token-mining', label: t('header.tokenMining') },
+    { id: 'token-mining', label: t('header.buy') },
     { id: 'referral', label: t('header.referral') },
   ];
 

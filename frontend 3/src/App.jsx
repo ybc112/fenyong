@@ -36,50 +36,35 @@ function App() {
 
   const contracts = useContracts(signer, provider);
 
-  // provider 还没初始化好时，不要传入空合约读取数据
   const stakingData = useStakingBank(provider ? contracts.stakingBank : null, account);
   const tokenFeeData = useTokenFeeConfig(provider ? contracts.nbtToken : null, account);
   const { balance: tokenBalance, refetch: refetchTokenBalance } = useTokenBalance(provider ? contracts.nbtToken : null, account);
-  const { allowance: stakingAllowance, refetch: refetchStakingAllowance } = useAllowance(
-    provider ? contracts.nbtToken : null,
+  const { balance: paymentBalance, refetch: refetchPaymentBalance } = useTokenBalance(provider ? contracts.paymentToken : null, account);
+  const { allowance: paymentAllowance, refetch: refetchPaymentAllowance } = useAllowance(
+    provider ? contracts.paymentToken : null,
     account,
     CONTRACTS.STAKING_BANK
-  );
-  const { allowance: feeAllowance, refetch: refetchFeeAllowance } = useAllowance(
-    provider ? contracts.feeToken : null,
-    account,
-    CONTRACTS.STAKING_BANK
-  );
-  const feeConfig = stakingData?.interactionFeeConfig;
-  const isNativeFee = feeConfig?.feeToken === ethers.ZeroAddress || !CONTRACTS.FEE_TOKEN;
-  const feeTxOptions = () => (
-    isNativeFee && parseFloat(feeConfig?.fee || '0') > 0
-      ? { value: ethers.parseEther(feeConfig.fee) }
-      : {}
   );
 
   useEffect(() => {
     const checkAdmin = async () => {
-      if (!account || (!contracts.stakingBank && !contracts.nbtToken)) {
+      if (!account || !contracts.stakingBank) {
         setIsAdmin(false);
         return;
       }
 
       try {
-        const owners = await Promise.all([
-          contracts.stakingBank?.owner().catch(() => null),
-          contracts.nbtToken?.owner().catch(() => null),
-        ]);
-        setIsAdmin(owners.some(owner => owner && owner.toLowerCase() === account.toLowerCase()));
+        const stakingOwner = await contracts.stakingBank.owner().catch(() => null);
+        const isOwner = stakingOwner && stakingOwner.toLowerCase() === account.toLowerCase();
+        setIsAdmin(isOwner);
       } catch {
         setIsAdmin(false);
       }
     };
 
     checkAdmin();
-  }, [account, contracts.stakingBank, contracts.nbtToken]);
+  }, [account, contracts.stakingBank]);
 
-  // 读取 URL / localStorage 中的待绑定推荐人
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const ref = urlParams.get('ref');
@@ -95,13 +80,11 @@ function App() {
     }
   }, []);
 
-  // 当钱包连接后检查是否和自己是同一人，或链上已绑定
   useEffect(() => {
     const checkReferrer = async () => {
       if (!account || !pendingReferrer || !contracts.stakingBank) return;
 
       try {
-        // 不能推荐自己
         if (pendingReferrer.toLowerCase() === account.toLowerCase()) {
           toast.error(t('toast.cannotReferSelf'));
           localStorage.removeItem('referrer');
@@ -110,22 +93,13 @@ function App() {
           return;
         }
 
-        let hasReferrer = true;
-        try {
-          hasReferrer = await contracts.stakingBank.hasReferrer(account);
-        } catch {
-          // 如果读不到 hasReferrer，保守认为已有推荐人，避免弹窗
-          hasReferrer = true;
-        }
-
-        if (hasReferrer) {
-          // 链上已绑定：不清空 localStorage（保留给未连接的钱包/后续新用户使用）
+        const referrer = await contracts.stakingBank.referrerOf(account).catch(() => ethers.ZeroAddress);
+        if (referrer && referrer !== ethers.ZeroAddress) {
           setPendingReferrer(null);
           setShowReferrerModal(false);
           return;
         }
 
-        // 未绑定且 pendingReferrer 有效：弹出绑定确认
         setShowReferrerModal(true);
       } catch (err) {
         console.error('Check referrer error:', err);
@@ -139,8 +113,8 @@ function App() {
     stakingData.refetch();
     tokenFeeData.refetch();
     refetchTokenBalance();
-    refetchStakingAllowance();
-    refetchFeeAllowance();
+    refetchPaymentBalance();
+    refetchPaymentAllowance();
   };
 
   useEffect(() => {
@@ -154,16 +128,13 @@ function App() {
 
     setIsBindingReferrer(true);
     try {
-      let hasReferrer = true;
-      try {
-        hasReferrer = await contracts.stakingBank.hasReferrer(account);
-      } catch {}
+      const referrer = await contracts.stakingBank.referrerOf(account).catch(() => ethers.ZeroAddress);
 
-      if (hasReferrer) {
+      if (referrer && referrer !== ethers.ZeroAddress) {
         toast.success(t('toast.bindSuccess'));
       } else {
         toast.loading(t('toast.bindingReferrer'), { id: 'bindRef' });
-        const tx = await contracts.writeStakingBank.setReferrer(pendingReferrer, feeTxOptions());
+        const tx = await contracts.writeStakingBank.setReferrer(pendingReferrer);
         await tx.wait();
         toast.success(t('toast.bindSuccess'), { id: 'bindRef' });
       }
@@ -180,7 +151,6 @@ function App() {
   };
 
   const handleCancelBind = () => {
-    // 取消绑定：只清空 localStorage 和 pendingReferrer，不再弹窗
     localStorage.removeItem('referrer');
     setPendingReferrer(null);
     setShowReferrerModal(false);
@@ -194,8 +164,8 @@ function App() {
             account={account}
             stakingData={stakingData}
             tokenBalance={tokenBalance}
-            stakingAllowance={stakingAllowance}
-            feeAllowance={feeAllowance}
+            paymentBalance={paymentBalance}
+            paymentAllowance={paymentAllowance}
             contracts={contracts}
             isCorrectNetwork={isCorrectNetwork}
             onSwitchNetwork={switchNetwork}
@@ -207,7 +177,6 @@ function App() {
           <ReferralPage
             account={account}
             stakingData={stakingData}
-            feeAllowance={feeAllowance}
             contracts={contracts}
             onRefresh={handleRefresh}
           />
@@ -378,7 +347,7 @@ function App() {
                 rel="noopener noreferrer"
                 className="text-white/40 hover:text-[#00D9A5] text-sm transition-colors"
               >
-                {t('footer.tokenMiningContract')}
+                {t('footer.saleContract')}
               </a>
             )}
           </div>

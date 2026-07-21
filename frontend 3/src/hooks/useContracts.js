@@ -42,22 +42,16 @@ const fetchStakingSnapshot = async (account, refresh = false) => {
 const applyStakingSnapshot = (prev, snapshot) => ({
   ...prev,
   userInfo: snapshot.userInfo ?? null,
-  stakes: snapshot.stakes ?? [],
-  miningStatus: snapshot.miningStatus ?? prev.miningStatus,
-  pendingRewardAll: snapshot.pendingRewardAll ?? '0',
   referrals: snapshot.referrals ?? [],
   referralsTotal: snapshot.referralsTotal ?? 0,
-  rankedNodes: snapshot.rankedNodes ?? prev.rankedNodes,
-  rankedNodesTotal: snapshot.rankedNodesTotal ?? prev.rankedNodesTotal,
-  currentRelease: snapshot.currentRelease ?? prev.currentRelease,
-  interactionFeeConfig: snapshot.interactionFeeConfig ?? prev.interactionFeeConfig,
-  stakingTokenAddress: snapshot.stakingTokenAddress || prev.stakingTokenAddress,
-  rewardTokenAddress: snapshot.rewardTokenAddress || prev.rewardTokenAddress,
-  inviteReward: snapshot.inviteReward || prev.inviteReward,
-  minReferralStakeValue: snapshot.minReferralStakeValue || prev.minReferralStakeValue,
-  lockPeriod: snapshot.lockPeriod || prev.lockPeriod,
-  stakeValueRate: snapshot.stakeValueRate || prev.stakeValueRate,
+  saleStatus: snapshot.saleStatus ?? prev.saleStatus,
+  saleTokenAddress: snapshot.saleTokenAddress || prev.saleTokenAddress,
+  paymentTokenAddress: snapshot.paymentTokenAddress || prev.paymentTokenAddress,
+  tokenPrice: snapshot.tokenPrice || prev.tokenPrice,
+  owner: snapshot.owner || prev.owner,
+  teamWallet: snapshot.teamWallet || prev.teamWallet,
   isPaused: typeof snapshot.isPaused === 'boolean' ? snapshot.isPaused : prev.isPaused,
+  interestInfo: snapshot.interestInfo ?? prev.interestInfo,
   apiCache: snapshot.cache || null,
   loading: false,
 });
@@ -65,10 +59,10 @@ const applyStakingSnapshot = (prev, snapshot) => ({
 export function useContracts(signer, provider) {
   const [contracts, setContracts] = useState({
     nbtToken: null,
-    feeToken: null,
+    paymentToken: null,
     stakingBank: null,
     writeNbtToken: null,
-    writeFeeToken: null,
+    writePaymentToken: null,
     writeStakingBank: null,
   });
 
@@ -81,8 +75,8 @@ export function useContracts(signer, provider) {
     const stakingBank = CONTRACTS.STAKING_BANK
       ? new ethers.Contract(CONTRACTS.STAKING_BANK, STAKING_BANK_ABI, provider)
       : null;
-    const feeToken = CONTRACTS.FEE_TOKEN
-      ? new ethers.Contract(CONTRACTS.FEE_TOKEN, ERC20_ABI, provider)
+    const paymentToken = CONTRACTS.PAYMENT_TOKEN
+      ? new ethers.Contract(CONTRACTS.PAYMENT_TOKEN, ERC20_ABI, provider)
       : null;
     const writeNbtToken = CONTRACTS.NBT_TOKEN && signer
       ? new ethers.Contract(CONTRACTS.NBT_TOKEN, NBT_TOKEN_ABI, signer)
@@ -90,16 +84,16 @@ export function useContracts(signer, provider) {
     const writeStakingBank = CONTRACTS.STAKING_BANK && signer
       ? new ethers.Contract(CONTRACTS.STAKING_BANK, STAKING_BANK_ABI, signer)
       : null;
-    const writeFeeToken = CONTRACTS.FEE_TOKEN && signer
-      ? new ethers.Contract(CONTRACTS.FEE_TOKEN, ERC20_ABI, signer)
+    const writePaymentToken = CONTRACTS.PAYMENT_TOKEN && signer
+      ? new ethers.Contract(CONTRACTS.PAYMENT_TOKEN, ERC20_ABI, signer)
       : null;
 
     setContracts({
       nbtToken,
-      feeToken,
+      paymentToken,
       stakingBank,
       writeNbtToken,
-      writeFeeToken,
+      writePaymentToken,
       writeStakingBank,
     });
   }, [signer, provider]);
@@ -110,28 +104,20 @@ export function useContracts(signer, provider) {
 export function useStakingBank(contract, account) {
   const [data, setData] = useState({
     userInfo: null,
-    stakes: [],
-    miningStatus: null,
-    pendingRewardAll: '0',
     referrals: [],
     referralsTotal: 0,
-    rankedNodes: [],
-    rankedNodesTotal: 0,
-    currentRelease: null,
-    interactionFeeConfig: null,
-    stakingTokenAddress: null,
-    rewardTokenAddress: null,
-    inviteReward: '1000000',
-    minReferralStakeValue: '100',
-    lockPeriod: 15 * 24 * 60 * 60,
-    stakeValueRate: '1',
+    saleStatus: null,
+    saleTokenAddress: null,
+    paymentTokenAddress: null,
+    tokenPrice: '1',
+    owner: null,
+    teamWallet: null,
     isPaused: false,
+    interestInfo: { rateBps: 100, pendingInterest: '0', poolBalance: '0' },
     loading: true,
   });
 
   const fetchData = useCallback(async (forceRefresh = false) => {
-
-    // 错误时保留上一次有效数据，避免 RPC 抖动导致界面全 0
     setData(prev => ({ ...prev, loading: true }));
 
     try {
@@ -148,140 +134,80 @@ export function useStakingBank(contract, account) {
     }
 
     try {
-      const [
-        miningStatus,
-        isPaused,
-        currentRelease,
-        interactionFeeConfig,
-        stakingTokenAddress,
-        rewardTokenAddress,
-        inviteReward,
-        minReferralStakeValue,
-        lockPeriod,
-        stakeValueRate,
-        rankedData,
-      ] = await safeRead(() =>
+      const [saleStatus, isPaused, saleTokenAddress, paymentTokenAddress, tokenPrice, owner, teamWallet, dailyInterestRateBps] = await safeRead(() =>
         Promise.all([
-          contract.getMiningStatus(),
+          contract.getSaleStatus(),
           contract.paused ? contract.paused().catch(() => false) : Promise.resolve(false),
-          contract.getCurrentRelease().catch(() => null),
-          contract.getInteractionFeeConfig().catch(() => null),
-          contract.stakingToken().catch(() => ''),
-          contract.rewardToken().catch(() => ''),
-          contract.inviteReward().catch(() => ethers.parseEther('1000000')),
-          contract.minReferralStakeValue ? contract.minReferralStakeValue().catch(() => ethers.parseEther('100')) : Promise.resolve(ethers.parseEther('100')),
-          contract.LOCK_PERIOD ? contract.LOCK_PERIOD().catch(() => BigInt(15 * 24 * 60 * 60)) : Promise.resolve(BigInt(15 * 24 * 60 * 60)),
-          contract.stakeValueRate().catch(() => ethers.parseEther('1')),
-          contract.getRankedNodes(0, 100).catch(() => ({ nodes: [], scores: [], total: 0n })),
+          contract.saleToken().catch(() => ''),
+          contract.paymentToken().catch(() => ''),
+          contract.tokenPrice().catch(() => ethers.parseEther('1')),
+          contract.owner().catch(() => ''),
+          contract.teamWallet().catch(() => ''),
+          contract.dailyInterestRateBps().catch(() => 100n),
         ]), null);
 
-      // 如果核心状态拉取失败，保留旧数据并停止 loading
-      if (!miningStatus) {
+      if (!saleStatus) {
         setData(prev => ({ ...prev, loading: false }));
         return;
       }
 
       let userInfo = null;
-      let stakes = [];
-      let pendingRewardAll = BigInt(0);
+      let pendingRewards = 0n;
+      let pendingInterest = 0n;
       let referrals = [];
       let referralsTotal = 0;
 
       if (account) {
         userInfo = await safeRead(() => contract.getUserInfo(account), null);
-        pendingRewardAll = await safeRead(() => contract.pendingRewardAll(account), BigInt(0));
-
-        const userStakes = await safeRead(() => contract.getUserStakes(account), null);
-        if (userStakes) {
-          const lockPeriodSeconds = Number(lockPeriod ?? data.lockPeriod);
-          const nowSeconds = Math.floor(Date.now() / 1000);
-          stakes = userStakes.stakeIds.map((id, index) => {
-            const startTime = Number(userStakes.startTimes[index]);
-            const unlockTime = startTime + lockPeriodSeconds;
-            return {
-              stakeId: Number(id),
-              amount: ethers.formatEther(userStakes.amounts[index]),
-              scoreValue: ethers.formatEther(userStakes.scoreValues?.[index] ?? 0n),
-              startTime,
-              unlockTime,
-              isUnlocked: nowSeconds >= unlockTime,
-              active: userStakes.actives[index],
-            };
-          }).filter(stake => stake.active);
-        }
-
-        const refData = await safeRead(() => contract.getReferralsPaginated(account, 0, 10), null);
+        pendingRewards = await safeRead(() => contract.pendingRewards(account), BigInt(0));
+        pendingInterest = await safeRead(() => contract.pendingInterest(account), BigInt(0));
+        const refData = await safeRead(() => contract.getReferralsPaginated(account, 0, 20), null);
         if (refData) {
           referrals = refData.result;
           referralsTotal = Number(refData.total);
         }
       }
 
-      const info = userInfo?.info || userInfo?.[0];
-      const rankedNodes = rankedData
-        ? Array.from(rankedData.nodes || rankedData[0] || []).map((node, index) => ({
-            address: node,
-            score: ethers.formatEther((rankedData.scores || rankedData[1])[index]),
-            rank: index + 1,
-          }))
-        : data.rankedNodes;
-      const rankedNodesTotal = rankedData ? Number(rankedData.total || rankedData[2] || 0) : data.rankedNodesTotal;
+      const interestPoolBalance = await safeRead(() =>
+        contract.saleToken().then(addr =>
+          new ethers.Contract(addr, ERC20_ABI, contract.runner).balanceOf(contract.target)
+        ), 0n);
+
+      const info = userInfo?.[0] ? userInfo : null;
 
       setData(prev => ({
         ...prev,
         userInfo: info ? {
-          totalStaked: ethers.formatEther(info.totalStaked ?? info[0]),
-          totalWithdrawn: ethers.formatEther(info.totalWithdrawn ?? info[1]),
-          stakeCount: Number(info.stakeCount ?? info[2]),
-          activeStakeCount: Number(info.activeStakeCount ?? info[3]),
-          referrer: info.referrer ?? info[4],
-          directReferrals: Number(info.directReferrals ?? info[5]),
-          referralStakeVolume: ethers.formatEther(info.referralStakeVolume ?? info[6]),
-          pendingInviteRewards: ethers.formatEther(info.pendingInviteRewards ?? info[7]),
-          totalInviteClaimed: ethers.formatEther(info.totalInviteClaimed ?? info[8]),
-          pendingRankRewards: ethers.formatEther(info.pendingRankRewards ?? info[9]),
-          totalRankClaimed: ethers.formatEther(info.totalRankClaimed ?? info[10]),
-          lockedInviteRewards: ethers.formatEther(info.lockedInviteRewards ?? info[11] ?? 0n),
-          inviteUnlockCursor: Number(info.inviteUnlockCursor ?? info[12] ?? 0n),
-          pendingRewards: ethers.formatEther(userInfo.pendingRewards ?? userInfo[1]),
-          totalClaimed: ethers.formatEther(userInfo.totalClaimed ?? userInfo[2]),
-          rank: Number(userInfo.rank ?? userInfo[3]),
+          referrer: info.referrer ?? info[0],
+          purchased: ethers.formatEther(info.purchased ?? info[1]),
+          directReward: ethers.formatEther(info.directReward ?? info[2]),
+          indirectReward: ethers.formatEther(info.indirectReward ?? info[3]),
+          teamReward: ethers.formatEther(info.teamReward ?? info[4]),
+          claimed: ethers.formatEther(info.claimed ?? info[5]),
+          referralCount: Number(info.referralCount ?? info[6]),
+          pendingRewards: ethers.formatEther(pendingRewards),
+          pendingInterest: ethers.formatEther(pendingInterest),
         } : prev.userInfo,
-        stakes: stakes.length > 0 ? stakes : prev.stakes,
-        miningStatus: {
-          totalStaked: ethers.formatEther(miningStatus._totalStaked),
-          totalDistributed: ethers.formatEther(miningStatus._totalDistributed),
-          claimableRewards: ethers.formatEther(miningStatus._claimableRewards),
-          releaseInProgress: miningStatus._releaseInProgress,
-          startTime: Number(miningStatus._startTime),
-          rankedNodeCount: Number(miningStatus._rankedNodeCount),
-        },
-        pendingRewardAll: ethers.formatEther(pendingRewardAll),
         referrals: referrals.length > 0 ? referrals : prev.referrals,
         referralsTotal: referralsTotal > 0 ? referralsTotal : prev.referralsTotal,
-        rankedNodes,
-        rankedNodesTotal,
-        currentRelease: currentRelease ? {
-          epochId: Number(currentRelease.epochId ?? currentRelease[0]),
-          amount: ethers.formatEther(currentRelease.amount ?? currentRelease[1]),
-          totalNodes: Number(currentRelease.totalNodes ?? currentRelease[2]),
-          nextRank: Number(currentRelease.nextRank ?? currentRelease[3]),
-          allocatedAmount: ethers.formatEther(currentRelease.allocatedAmount ?? currentRelease[4]),
-          finalized: currentRelease.finalized ?? currentRelease[5],
-        } : prev.currentRelease,
-        interactionFeeConfig: interactionFeeConfig ? {
-          feeToken: interactionFeeConfig.feeToken ?? interactionFeeConfig[0],
-          fee: ethers.formatEther(interactionFeeConfig.fee ?? interactionFeeConfig[1]),
-          receiverA: interactionFeeConfig.receiverA ?? interactionFeeConfig[2],
-          receiverB: interactionFeeConfig.receiverB ?? interactionFeeConfig[3],
-        } : prev.interactionFeeConfig,
-        stakingTokenAddress: stakingTokenAddress || prev.stakingTokenAddress,
-        rewardTokenAddress: rewardTokenAddress || prev.rewardTokenAddress,
-        inviteReward: ethers.formatEther(inviteReward ?? ethers.parseEther(prev.inviteReward || '1000000')),
-        minReferralStakeValue: ethers.formatEther(minReferralStakeValue ?? ethers.parseEther(prev.minReferralStakeValue || '100')),
-        lockPeriod: Number(lockPeriod ?? prev.lockPeriod),
-        stakeValueRate: ethers.formatEther(stakeValueRate ?? ethers.parseEther(prev.stakeValueRate || '1')),
+        saleStatus: {
+          totalSold: ethers.formatEther(saleStatus._totalSold),
+          totalUSDTReceived: ethers.formatEther(saleStatus._totalUSDTReceived),
+          totalRewardsDistributed: ethers.formatEther(saleStatus._totalRewardsDistributed),
+          tokenPrice: ethers.formatEther(saleStatus._tokenPrice),
+          paused: saleStatus._paused,
+        },
+        saleTokenAddress: saleTokenAddress || prev.saleTokenAddress,
+        paymentTokenAddress: paymentTokenAddress || prev.paymentTokenAddress,
+        tokenPrice: ethers.formatEther(tokenPrice ?? ethers.parseEther(prev.tokenPrice || '1')),
+        owner: owner || prev.owner,
+        teamWallet: teamWallet || prev.teamWallet,
         isPaused: typeof isPaused === 'boolean' ? isPaused : prev.isPaused,
+        interestInfo: {
+          rateBps: Number(dailyInterestRateBps ?? 100n),
+          pendingInterest: ethers.formatEther(pendingInterest),
+          poolBalance: ethers.formatEther(interestPoolBalance),
+        },
         loading: false,
       }));
     } catch (err) {
