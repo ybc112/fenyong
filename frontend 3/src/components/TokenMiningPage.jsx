@@ -229,59 +229,8 @@ export default function TokenMiningPage({
         <p className="text-white/50">{t('cz.buy.subtitle')}</p>
       </section>
 
-      <section className="grid lg:grid-cols-3 gap-6">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="lg:col-span-2 glass-premium p-5 sm:p-6">
-          <div className="flex items-center justify-between mb-5">
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
-              <FiDollarSign className="text-[#00D9A5]" />
-              {t('cz.buy.buyTokens')}
-            </h2>
-            <div className="text-sm text-white/40">1 USDT = {formatNumber(tokenPrice, 0)} {TOKEN_SYMBOL}</div>
-          </div>
-
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-white/50 mb-2">{t('cz.buy.usdtAmount')}</label>
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="input-premium pr-20"
-                  disabled={!account}
-                />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 text-sm">USDT</span>
-              </div>
-              <div className="flex justify-between text-xs text-white/40 mt-1">
-                <span>{t('cz.buy.balance')}: {formatNumber(paymentBalance, 4)} USDT</span>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-xl bg-white/5 border border-white/5">
-              <div className="text-sm text-white/50 mb-1">{t('cz.buy.youWillReceive')}</div>
-              <div className="text-2xl font-bold text-[#00D9A5]">{formatNumber(tokenAmount, 2)} {TOKEN_SYMBOL}</div>
-            </div>
-
-            {!account ? (
-              <button onClick={onSwitchNetwork} className="w-full btn-premium">{t('header.connectWallet')}</button>
-            ) : !isCorrectNetwork ? (
-              <button onClick={onSwitchNetwork} className="w-full btn-premium">{t('header.switchNetwork')}</button>
-            ) : needsApproval ? (
-              <button onClick={approvePayment} disabled={isApproving} className="w-full btn-premium disabled:opacity-50">
-                {isApproving ? t('cz.buy.approving') : t('cz.buy.approveUSDT')}
-              </button>
-            ) : (
-              <button onClick={buyTokens} disabled={isBuying || usdtAmount <= 0} className="w-full btn-premium disabled:opacity-50">
-                {isBuying ? t('cz.buy.buying') : t('cz.buy.buyNow')}
-              </button>
-            )}
-          </div>
-        </motion.div>
-
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="space-y-4">
+      <section>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
           <div className="stat-card-premium">
             <div className="flex items-center gap-2 text-[#FFB800] mb-3">
               <FiCreditCard />

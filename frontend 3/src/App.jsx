@@ -259,15 +259,7 @@ function App() {
 
       <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-14 md:h-20">
-            <div className="flex items-center gap-3">
-              <img src="/cz-logo.png" alt="CZ" className="w-9 h-9 sm:w-11 sm:h-11 rounded-full object-cover" />
-              <div className="hidden sm:block">
-                <h1 className="text-xl font-bold"><span className="text-white">Crypto</span><span className="text-[#FFB800]"> Zenith</span></h1>
-                <p className="text-xs text-white/50 tracking-wide">{t('header.tagline')}</p>
-              </div>
-            </div>
-
+          <div className="flex items-center justify-end h-14 md:h-20">
             <div className="flex items-center gap-3">
               <motion.button
                 whileHover={{ scale: 1.05 }}
