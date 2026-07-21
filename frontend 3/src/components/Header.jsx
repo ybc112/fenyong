@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiMenu, FiX, FiExternalLink, FiShield, FiGlobe } from 'react-icons/fi';
+import { FiMenu, FiX, FiExternalLink, FiGlobe } from 'react-icons/fi';
 import { CURRENT_NETWORK, formatAddress, getExplorerAddressUrl } from '../utils/constants';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -34,19 +34,10 @@ export default function Header({ account, isConnecting, isCorrectNetwork, onConn
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { language, toggleLanguage, t } = useLanguage();
 
-  // 基础导航项
-  const baseNavItems = [
-    { id: 'home', label: t('header.home') },
+  // 只保留购买代币导航
+  const navItems = [
     { id: 'token-mining', label: t('header.buy') },
-    { id: 'referral', label: t('header.referral') },
   ];
-
-  // 只有管理员才能看到管理菜单
-  const navItems = isAdmin
-    ? [...baseNavItems,
-       { id: 'admin', label: t('header.admin'), icon: <FiShield className="w-4 h-4" /> }
-      ]
-    : baseNavItems;
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50">
@@ -68,22 +59,6 @@ export default function Header({ account, isConnecting, isCorrectNetwork, onConn
                   {item.label}
                 </button>
               ))}
-              <a
-                href="/whitepaper.pdf"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 nav-link"
-              >
-                {t('header.whitepaper')}
-              </a>
-              <a
-                href="https://t.me/CZRSBNB"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 nav-link"
-              >
-                {t('header.telegram')}
-              </a>
             </nav>
 
             {/* Wallet Connection */}
@@ -172,24 +147,6 @@ export default function Header({ account, isConnecting, isCorrectNetwork, onConn
                   {item.label}
                 </button>
               ))}
-              <a
-                href="/whitepaper.pdf"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full text-left flex items-center gap-2 nav-link"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {t('header.whitepaper')}
-              </a>
-              <a
-                href="https://t.me/CZRSBNB"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full text-left flex items-center gap-2 nav-link"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {t('header.telegram')}
-              </a>
               {account && (
                 <div className="pt-3 mt-3 border-t border-white/5">
                   <div className="flex items-center gap-2 px-4 py-2">

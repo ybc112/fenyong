@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
-import { FiDollarSign, FiGift, FiRefreshCw, FiShoppingCart, FiTrendingUp } from 'react-icons/fi';
+import { FiCreditCard, FiDollarSign, FiGift, FiRefreshCw, FiShoppingCart, FiTrendingUp } from 'react-icons/fi';
 import { CONTRACTS, formatNumber, parseContractError } from '../utils/constants';
 import { useLanguage } from '../contexts/LanguageContext';
 
@@ -200,7 +200,7 @@ export default function TokenMiningPage({
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="space-y-4">
           <div className="stat-card-premium">
             <div className="flex items-center gap-2 text-[#FFB800] mb-3">
-              <FiWallet />
+              <FiCreditCard />
               <span className="text-white/45 text-sm">{t('cz.buy.tokenBalance')}</span>
             </div>
             <div className="text-xl font-bold text-white">{formatNumber(tokenBalance, 4)} {t('cz.common.tokenSymbol')}</div>
