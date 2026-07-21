@@ -2,13 +2,9 @@ import { useState, useEffect } from 'react';
 import { Toaster, toast } from 'react-hot-toast';
 import { ethers } from 'ethers';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiUserPlus, FiCheck } from 'react-icons/fi';
+import { FiUserPlus, FiCheck, FiGlobe, FiExternalLink } from 'react-icons/fi';
 
-import Header from './components/Header';
-import HomePage from './components/HomePage';
 import TokenMiningPage from './components/TokenMiningPage';
-import ReferralPage from './components/ReferralPage';
-import AdminPage from './components/AdminPage';
 
 import { useWallet } from './hooks/useWallet';
 import { useAllowance, useContracts, useStakingBank, useTokenBalance, useTokenFeeConfig } from './hooks/useContracts';
@@ -16,8 +12,6 @@ import { CONTRACTS, formatAddress, getExplorerAddressUrl, parseContractError } f
 import { useLanguage } from './contexts/LanguageContext';
 
 function App() {
-  const [currentPage, setCurrentPage] = useState('home');
-  const [isAdmin, setIsAdmin] = useState(false);
   const [pendingReferrer, setPendingReferrer] = useState(null);
   const [showReferrerModal, setShowReferrerModal] = useState(false);
   const [isBindingReferrer, setIsBindingReferrer] = useState(false);
@@ -45,25 +39,6 @@ function App() {
     account,
     CONTRACTS.STAKING_BANK
   );
-
-  useEffect(() => {
-    const checkAdmin = async () => {
-      if (!account || !contracts.stakingBank) {
-        setIsAdmin(false);
-        return;
-      }
-
-      try {
-        const stakingOwner = await contracts.stakingBank.owner().catch(() => null);
-        const isOwner = stakingOwner && stakingOwner.toLowerCase() === account.toLowerCase();
-        setIsAdmin(isOwner);
-      } catch {
-        setIsAdmin(false);
-      }
-    };
-
-    checkAdmin();
-  }, [account, contracts.stakingBank]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -156,50 +131,19 @@ function App() {
     setShowReferrerModal(false);
   };
 
-  const renderPage = () => {
-    switch (currentPage) {
-      case 'token-mining':
-        return (
-          <TokenMiningPage
-            account={account}
-            stakingData={stakingData}
-            tokenBalance={tokenBalance}
-            paymentBalance={paymentBalance}
-            paymentAllowance={paymentAllowance}
-            contracts={contracts}
-            isCorrectNetwork={isCorrectNetwork}
-            onSwitchNetwork={switchNetwork}
-            onRefresh={handleRefresh}
-          />
-        );
-      case 'referral':
-        return (
-          <ReferralPage
-            account={account}
-            stakingData={stakingData}
-            contracts={contracts}
-            onRefresh={handleRefresh}
-          />
-        );
-      case 'admin':
-        return (
-          <AdminPage
-            account={account}
-            contracts={contracts}
-            stakingData={stakingData}
-            tokenFeeData={tokenFeeData}
-            onRefresh={handleRefresh}
-          />
-        );
-      default:
-        return (
-          <HomePage
-            onPageChange={setCurrentPage}
-            stakingData={stakingData}
-          />
-        );
-    }
-  };
+  const renderPage = () => (
+    <TokenMiningPage
+      account={account}
+      stakingData={stakingData}
+      tokenBalance={tokenBalance}
+      paymentBalance={paymentBalance}
+      paymentAllowance={paymentAllowance}
+      contracts={contracts}
+      isCorrectNetwork={isCorrectNetwork}
+      onSwitchNetwork={switchNetwork}
+      onRefresh={handleRefresh}
+    />
+  );
 
   return (
     <>
@@ -313,16 +257,63 @@ function App() {
         </div>
       )}
 
-      <Header
-        account={account}
-        isConnecting={isConnecting}
-        isCorrectNetwork={isCorrectNetwork}
-        onConnect={connect}
-        onSwitchNetwork={switchNetwork}
-        currentPage={currentPage}
-        onPageChange={setCurrentPage}
-        isAdmin={isAdmin}
-      />
+      <header className="fixed top-0 left-0 right-0 z-50 glass border-b border-white/5">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14 md:h-20">
+            <div className="flex items-center gap-3">
+              <img src="/cz-logo.png" alt="CZ" className="w-9 h-9 sm:w-11 sm:h-11 rounded-full object-cover" />
+              <div className="hidden sm:block">
+                <h1 className="text-xl font-bold"><span className="text-white">Crypto</span><span className="text-[#FFB800]"> Zenith</span></h1>
+                <p className="text-xs text-white/50 tracking-wide">{t('header.tagline')}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={toggleLanguage}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <FiGlobe className="w-4 h-4" />
+                <span className="text-sm font-medium">{language === 'zh' ? 'EN' : '中'}</span>
+              </motion.button>
+
+              {account ? (
+                <div className="flex items-center gap-2">
+                  {!isCorrectNetwork && (
+                    <motion.button
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                      onClick={switchNetwork}
+                      className="px-4 py-2 bg-[#FF6B6B]/20 border border-[#FF6B6B]/50 rounded-xl text-[#FF6B6B] text-sm font-medium hover:bg-[#FF6B6B]/30 transition-colors"
+                    >
+                      {t('header.switchNetwork')} {CURRENT_NETWORK.chainName}
+                    </motion.button>
+                  )}
+                  <div className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1A2332] border border-white/5">
+                    <div className="w-2 h-2 rounded-full bg-[#00D9A5] animate-pulse" />
+                    <span className="text-sm font-medium text-white/90">{formatAddress(account)}</span>
+                    <a href={getExplorerAddressUrl(account)} target="_blank" rel="noopener noreferrer" className="text-white/40 hover:text-[#00D9A5] transition-colors">
+                      <FiExternalLink size={14} />
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={connect}
+                  disabled={isConnecting}
+                  className="btn-primary text-sm"
+                >
+                  {isConnecting ? t('header.connecting') : t('header.connectWallet')}
+                </motion.button>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
 
       <main className="min-h-screen pt-20 md:pt-28 pb-8 md:pb-12 px-3 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">{renderPage()}</div>
