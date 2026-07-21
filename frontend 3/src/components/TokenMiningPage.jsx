@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 import toast from 'react-hot-toast';
 import { FiAward, FiCheck, FiCopy, FiCreditCard, FiDollarSign, FiExternalLink, FiGift, FiRefreshCw, FiShare2, FiShoppingCart, FiTrendingUp, FiUserPlus, FiUsers } from 'react-icons/fi';
 import { QRCodeSVG } from 'qrcode.react';
-import { CONTRACTS, formatAddress, formatNumber, getExplorerAddressUrl, parseContractError } from '../utils/constants';
+import { CONTRACTS, DEFAULT_TOKEN_PRICE, formatAddress, formatNumber, getExplorerAddressUrl, parseContractError, TOKEN_SYMBOL } from '../utils/constants';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function TokenMiningPage({
@@ -33,7 +33,7 @@ export default function TokenMiningPage({
 
   const saleStatus = stakingData?.saleStatus;
   const userInfo = stakingData?.userInfo;
-  const tokenPrice = parseFloat(stakingData?.tokenPrice || '1');
+  const tokenPrice = parseFloat(stakingData?.tokenPrice || DEFAULT_TOKEN_PRICE);
   const pendingRewards = parseFloat(userInfo?.pendingRewards || '0');
   const pendingInterest = parseFloat(userInfo?.pendingInterest || '0');
 
@@ -236,7 +236,7 @@ export default function TokenMiningPage({
               <FiDollarSign className="text-[#00D9A5]" />
               {t('cz.buy.buyTokens')}
             </h2>
-            <div className="text-sm text-white/40">1 USDT = {formatNumber(tokenPrice, 4)} {t('cz.common.tokenSymbol')}</div>
+            <div className="text-sm text-white/40">1 USDT = {formatNumber(tokenPrice, 0)} {TOKEN_SYMBOL}</div>
           </div>
 
           <div className="space-y-4">
@@ -262,7 +262,7 @@ export default function TokenMiningPage({
 
             <div className="p-4 rounded-xl bg-white/5 border border-white/5">
               <div className="text-sm text-white/50 mb-1">{t('cz.buy.youWillReceive')}</div>
-              <div className="text-2xl font-bold text-[#00D9A5]">{formatNumber(tokenAmount, 4)} {t('cz.common.tokenSymbol')}</div>
+              <div className="text-2xl font-bold text-[#00D9A5]">{formatNumber(tokenAmount, 2)} {TOKEN_SYMBOL}</div>
             </div>
 
             {!account ? (
@@ -287,7 +287,7 @@ export default function TokenMiningPage({
               <FiCreditCard />
               <span className="text-white/45 text-sm">{t('cz.buy.tokenBalance')}</span>
             </div>
-            <div className="text-xl font-bold text-white">{formatNumber(tokenBalance, 4)} {t('cz.common.tokenSymbol')}</div>
+            <div className="text-xl font-bold text-white">{formatNumber(tokenBalance, 2)} {TOKEN_SYMBOL}</div>
           </div>
 
           <div className="stat-card-premium">
@@ -295,7 +295,7 @@ export default function TokenMiningPage({
               <FiTrendingUp />
               <span className="text-white/45 text-sm">{t('cz.buy.purchased')}</span>
             </div>
-            <div className="text-xl font-bold text-white">{formatNumber(userInfo?.purchased, 4)} {t('cz.common.tokenSymbol')}</div>
+            <div className="text-xl font-bold text-white">{formatNumber(userInfo?.purchased, 2)} {TOKEN_SYMBOL}</div>
           </div>
 
           <div className="stat-card-premium">
@@ -303,7 +303,7 @@ export default function TokenMiningPage({
               <FiTrendingUp />
               <span className="text-white/45 text-sm">{t('cz.buy.holdingInterest')}</span>
             </div>
-            <div className="text-xl font-bold text-white">{formatNumber(pendingInterest, 4)} {t('cz.common.tokenSymbol')}</div>
+            <div className="text-xl font-bold text-white">{formatNumber(pendingInterest, 2)} {TOKEN_SYMBOL}</div>
             <div className="text-xs text-white/40 mt-1">{t('cz.buy.dailyInterestRate', { rate: stakingData?.interestInfo?.rateBps ? (stakingData.interestInfo.rateBps / 100).toFixed(2) : '1.00' })}</div>
           </div>
 
@@ -394,8 +394,12 @@ export default function TokenMiningPage({
                 <span>{copied ? t('cz.common.copied') : t('cz.common.copyExclusiveLink')}</span>
               </button>
             </div>
-            <div className="mx-auto lg:mx-0 p-4 rounded-xl bg-white border border-white/10">
-              <QRCodeSVG value={referralLink} size={160} level="M" includeMargin />
+            <div className="mx-auto lg:mx-0 p-4 rounded-xl bg-white border border-white/10 min-w-[176px] min-h-[176px] flex items-center justify-center">
+              {account ? (
+                <QRCodeSVG value={referralLink} size={160} level="M" includeMargin />
+              ) : (
+                <div className="text-center text-black/50 text-sm px-4">{t('header.connectWallet')}<br />{t('cz.common.generateQR')}</div>
+              )}
             </div>
           </div>
         </motion.div>

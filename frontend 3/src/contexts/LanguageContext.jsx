@@ -19,7 +19,7 @@ const translations = {
     cz: {
       common: {
         person: "人",
-        tokenSymbol: "代币",
+        tokenSymbol: "ATO",
         copied: "已复制",
         copyLink: "复制推荐链接",
         copyExclusiveLink: "复制专属链接",
@@ -85,10 +85,10 @@ const translations = {
         mechanism3: "所有奖励链上透明，随时领取，项目方不截留。",
       },
       buy: {
-        title: "购买代币",
-        subtitle: "使用 USDT 购买代币，享受持币生息与推荐奖励",
-        buyTokens: "购买代币",
-        tokenPrice: "代币价格",
+        title: "购买 ATO",
+        subtitle: "使用 USDT 购买 ATO，享受持币生息与推荐奖励",
+        buyTokens: "购买 ATO",
+        tokenPrice: "ATO 价格",
         usdtAmount: "USDT 数量",
         balance: "余额",
         youWillReceive: "你将获得",
@@ -96,7 +96,7 @@ const translations = {
         approving: "授权中...",
         buyNow: "立即购买",
         buying: "购买中...",
-        tokenBalance: "代币余额",
+        tokenBalance: "ATO 余额",
         purchased: "累计购买",
         holdingInterest: "持币生息",
         dailyInterestRate: "日息 {{rate}}%",
@@ -665,7 +665,7 @@ const translations = {
     cz: {
       common: {
         person: "people",
-        tokenSymbol: "Tokens",
+        tokenSymbol: "ATO",
         copied: "Copied",
         copyLink: "Copy Referral Link",
         copyExclusiveLink: "Copy Link",

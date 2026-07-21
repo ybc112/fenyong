@@ -8,7 +8,7 @@ import TokenMiningPage from './components/TokenMiningPage';
 
 import { useWallet } from './hooks/useWallet';
 import { useAllowance, useContracts, useStakingBank, useTokenBalance, useTokenFeeConfig } from './hooks/useContracts';
-import { CONTRACTS, formatAddress, getExplorerAddressUrl, parseContractError } from './utils/constants';
+import { CONTRACTS, CURRENT_NETWORK, formatAddress, getExplorerAddressUrl, NETWORKS, parseContractError } from './utils/constants';
 import { useLanguage } from './contexts/LanguageContext';
 
 function App() {

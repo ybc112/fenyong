@@ -1,5 +1,5 @@
 const MAINNET_CONTRACTS = {
-  NBT_TOKEN: '0x2922933e6B4a58530634BAEcF983Dd8ac34d4444',
+  ATO_TOKEN: '0x2922933e6B4a58530634BAEcF983Dd8ac34d4444',
   STAKING_BANK: '0x903fcce5d67648FBE6Dccc9806e3bd7D303380fD',
   PAYMENT_TOKEN: '0x55d398326f99059fF775485246999027B3197955', // BSC USDT
 };
@@ -20,11 +20,17 @@ const mainnetSafeAddress = (value, fallback) => {
 };
 
 export const CONTRACTS = {
-  NBT_TOKEN: mainnetSafeAddress(import.meta.env.VITE_NBT_TOKEN, MAINNET_CONTRACTS.NBT_TOKEN),
+  ATO_TOKEN: mainnetSafeAddress(import.meta.env.VITE_ATO_TOKEN, MAINNET_CONTRACTS.ATO_TOKEN),
+  NBT_TOKEN: mainnetSafeAddress(import.meta.env.VITE_ATO_TOKEN, MAINNET_CONTRACTS.ATO_TOKEN),
   STAKING_BANK: mainnetSafeAddress(import.meta.env.VITE_STAKING_BANK, MAINNET_CONTRACTS.STAKING_BANK),
   PAYMENT_TOKEN: mainnetSafeAddress(import.meta.env.VITE_PAYMENT_TOKEN, MAINNET_CONTRACTS.PAYMENT_TOKEN),
   NBT_PAIR: import.meta.env.VITE_NBT_PAIR || '',
 };
+
+export const TOKEN_SYMBOL = 'ATO';
+// 1 USDT = 100 ATO，兑换比例写到默认 tokenPrice（合约 owner 也可后续调整）
+export const DEFAULT_TOKEN_PRICE = '100';
+export const SALE_TOKEN_DECIMALS = 18;
 
 export const NETWORKS = {
   BSC_TESTNET: {
