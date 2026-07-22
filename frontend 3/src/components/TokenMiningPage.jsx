@@ -267,7 +267,7 @@ export default function TokenMiningPage({
               <span className="text-white/45 text-sm">{t('cz.buy.holdingInterest')}</span>
             </div>
             <div className="text-xl font-bold text-white">{formatNumber(pendingInterest, 2)} {TOKEN_SYMBOL}</div>
-            <div className="text-xs text-white/40 mt-1">{t('cz.buy.dailyInterestRate', { rate: stakingData?.interestInfo?.rateBps ? (stakingData.interestInfo.rateBps / 100).toFixed(2) : '1.00' })}</div>
+            <div className="text-xs text-white/40 mt-1">日息 1.00%</div>
           </div>
 
           <div className="stat-card-premium">
@@ -275,7 +275,7 @@ export default function TokenMiningPage({
               <FiGift />
               <span className="text-white/45 text-sm">{t('cz.buy.pendingRewards')}</span>
             </div>
-            <div className="text-xl font-bold text-white">{formatNumber(pendingRewards, 4)} USDT</div>
+            <div className="text-xl font-bold text-white">{formatNumber(pendingRewards, 2)} USDT</div>
           </div>
 
           <button
