@@ -99,7 +99,7 @@ const translations = {
         tokenBalance: "ATO 余额",
         purchased: "累计购买",
         holdingInterest: "持币生息",
-        dailyInterestRate: "日息 {{rate}}%",
+        dailyInterestRate: "日息 {rate}%",
         pendingRewards: "团队管理收益",
         claimRewards: "领取奖励",
         claimInterest: "领取利息",
