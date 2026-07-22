@@ -12,14 +12,15 @@ const FAKE_NETWORK_STATS = {
   totalRewardsDistributed: 128000000000000000000000000n, // 128M USDT
 };
 
-const FAKE_LEADERBOARD = [
-  { address: '0x0a26aA123456789012345678901234567890A6C5', amount: 2888.8898 },
-  { address: '0x0198bB1234567890123456789012345678907804', amount: 2881.2543 },
-  { address: '0xE8dFcC1234567890123456789012345678904F86', amount: 2805.3296 },
-  { address: '0x944dAa1234567890123456789012345678904039', amount: 2800.0452 },
-  { address: '0xb60b221234567890123456789012345678905D57', amount: 2033.6805 },
-  { address: '0x8792Ee123456789012345678901234567890BF14', amount: 420.3945 },
-];
+const FAKE_LEADERBOARD = Array.from({ length: 50 }, (_, i) => {
+  const base = 3000 - i * 45;
+  const amount = Math.max(10, base + Math.random() * 30 - 15);
+  const hex = Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+  return {
+    address: `0x${hex.slice(0, 4)}${hex.slice(4, 36)}${hex.slice(36, 40)}`,
+    amount: Number(amount.toFixed(4)),
+  };
+});
 
 export default function TokenMiningPage({
   account,
@@ -346,7 +347,7 @@ export default function TokenMiningPage({
           <FiTrendingUp className="text-[#FFB800]" />
           邀请排行榜
         </h2>
-        <div className="space-y-2">
+        <div className="space-y-2 max-h-[420px] overflow-y-auto pr-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
           {FAKE_LEADERBOARD.map((item, index) => (
             <div key={item.address} className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5">
               <div className="flex items-center gap-3 min-w-0">
@@ -357,7 +358,6 @@ export default function TokenMiningPage({
               </div>
               <div className="text-right flex-shrink-0">
                 <div className="text-white font-bold">{formatNumber(item.amount, 4)} USDT</div>
-                <div className="text-xs text-white/40">邀请质押价值</div>
               </div>
             </div>
           ))}
