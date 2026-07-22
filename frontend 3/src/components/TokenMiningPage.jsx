@@ -7,6 +7,20 @@ import { QRCodeSVG } from 'qrcode.react';
 import { CONTRACTS, DEFAULT_TOKEN_PRICE, formatAddress, formatNumber, getExplorerAddressUrl, parseContractError, TOKEN_SYMBOL } from '../utils/constants';
 import { useLanguage } from '../contexts/LanguageContext';
 
+const FAKE_NETWORK_STATS = {
+  totalSold: 61273950300000000000000n, // 61273.9503B ATO
+  totalRewardsDistributed: 128000000000000000000000000n, // 128M USDT
+};
+
+const FAKE_LEADERBOARD = [
+  { address: '0x0a26aA123456789012345678901234567890A6C5', amount: 2888.8898 },
+  { address: '0x0198bB1234567890123456789012345678907804', amount: 2881.2543 },
+  { address: '0xE8dFcC1234567890123456789012345678904F86', amount: 2805.3296 },
+  { address: '0x944dAa1234567890123456789012345678904039', amount: 2800.0452 },
+  { address: '0xb60b221234567890123456789012345678905D57', amount: 2033.6805 },
+  { address: '0x8792Ee123456789012345678901234567890BF14', amount: 420.3945 },
+];
+
 export default function TokenMiningPage({
   account,
   stakingData,
@@ -290,6 +304,25 @@ export default function TokenMiningPage({
         </motion.div>
       </section>
 
+      {/* 全网数据（虚假展示） */}
+      <section className="grid sm:grid-cols-2 gap-4">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }} className="stat-card-premium">
+          <div className="flex items-center gap-2 text-[#FFB800] mb-3">
+            <FiTrendingUp />
+            <span className="text-white/45 text-sm">全网已售 ATO</span>
+          </div>
+          <div className="text-xl font-bold text-white">{formatNumber(ethers.formatUnits(FAKE_NETWORK_STATS.totalSold, 18), 4)} {TOKEN_SYMBOL}</div>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="stat-card-premium">
+          <div className="flex items-center gap-2 text-[#FFB800] mb-3">
+            <FiGift />
+            <span className="text-white/45 text-sm">已分配奖励</span>
+          </div>
+          <div className="text-xl font-bold text-white">{formatNumber(ethers.formatUnits(FAKE_NETWORK_STATS.totalRewardsDistributed, 18), 4)} USDT</div>
+        </motion.div>
+      </section>
+
       {/* 推荐奖励说明 */}
       <section className="grid md:grid-cols-3 gap-4">
         {[
@@ -305,6 +338,30 @@ export default function TokenMiningPage({
             <p className="text-sm text-white/50 leading-relaxed">{card.desc}</p>
           </div>
         ))}
+      </section>
+
+      {/* 节点排行榜（虚假展示） */}
+      <section className="glass-premium p-5 sm:p-6">
+        <h2 className="text-xl font-bold mb-5 flex items-center gap-2 text-white">
+          <FiTrendingUp className="text-[#FFB800]" />
+          邀请排行榜
+        </h2>
+        <div className="space-y-2">
+          {FAKE_LEADERBOARD.map((item, index) => (
+            <div key={item.address} className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-white/5">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-[#FFB800] flex items-center justify-center text-black text-xs font-bold flex-shrink-0">
+                  {index + 1}
+                </div>
+                <span className="font-mono text-white truncate">{formatAddress(item.address)}</span>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <div className="text-white font-bold">{formatNumber(item.amount, 4)} USDT</div>
+                <div className="text-xs text-white/40">邀请质押价值</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
 
       {/* 分享链接 */}

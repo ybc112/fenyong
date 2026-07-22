@@ -95,6 +95,7 @@ export const formatNumber = (num, decimals = 2) => {
   if (n >= 1e9) return (n / 1e9).toFixed(decimals) + 'B';
   if (n >= 1e6) return (n / 1e6).toFixed(decimals) + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(decimals) + 'K';
+  if (n === 0) return n.toFixed(decimals);
   if (n < 1) return n.toFixed(Math.min(decimals + 2, 6));
   return n.toFixed(decimals);
 };
